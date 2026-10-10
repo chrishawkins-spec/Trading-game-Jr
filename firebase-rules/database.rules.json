@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "live": {
+      "$sessionId": {
+        ".read": true,
+        ".write": "auth != null"
+      }
+    }
+  }
+}

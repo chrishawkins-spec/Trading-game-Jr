@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+
+    function getAdminData() {
+      return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data;
+    }
+    function isSuperadmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && getAdminData().role == 'superadmin';
+    }
+
+    // Admins collection — read own record only
+    match /admins/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Game Configs — superadmin writes, any signed-in user reads (players need it)
+    match /gameConfigs/{configId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSuperadmin();
+      allow delete: if isSuperadmin() && resource.data.createdBy == request.auth.uid;
+    }
+
+    // Game Codes — public read; superadmin writes; players update counters
+    match /gameCodes/{code} {
+      allow read: if true;
+      allow create: if isSuperadmin();
+      allow update: if isSuperadmin()
+        || (isSignedIn() &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['activeUsers', 'playsUsed']));
+      allow delete: if isSuperadmin();
+    }
+
+    // Sessions — any signed-in user can create/update (covers anonymous teachers)
+    // Players are always anonymous; teachers are anonymous after our login flow
+    match /sessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isSuperadmin() ||
+        resource.data.adminUid == request.auth.uid
+      );
+
+      match /players/{playerId} {
+        allow read, write: if isSignedIn() && request.auth.uid == playerId;
+        allow read: if isSignedIn() && (
+          isSuperadmin() ||
+          get(/databases/$(database)/documents/sessions/$(sessionId)).data.adminUid == request.auth.uid
+        );
+        match /trades/{tradeId} {
+          allow read, create: if isSignedIn() && request.auth.uid == playerId;
+        }
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
