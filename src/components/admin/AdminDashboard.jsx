@@ -3,7 +3,7 @@ import { useAuth } from '../../hooks/useAuth.jsx';
 import GameConfigBuilder from './GameConfigBuilder.jsx';
 import GameCodeManager from './GameCodeManager.jsx';
 import SessionController from './SessionController.jsx';
-import { getGameConfigs, getAllGameCodes, deleteGameConfig, getAllTeachers } from '../../utils/firestore.js';
+import { getGameConfigs, getAllGameCodes, deleteGameConfig, getAllTeachers, getAllSessions, archiveSession, getArchivedSessions } from '../../utils/firestore.js';
 import { formatDate } from '../../utils/gameCode.js';
 
 export default function AdminDashboard() {
@@ -98,7 +98,7 @@ export default function AdminDashboard() {
 
         {/* Tabs */}
         <div className="tabs">
-          {[['codes', '🎟️ Game Codes'], ['configs', '⚙️ Game Configs'], ['teachers', '🎓 Teachers'], ['launch', '🚀 Launch Session']].map(([id, label]) => (
+          {[['codes', '🎟️ Game Codes'], ['configs', '⚙️ Game Configs'], ['teachers', '🎓 Teachers'], ['launch', '🚀 Launch Session'], ['archive', '🗂️ Session Archive']].map(([id, label]) => (
             <div key={id} className={`tab${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>
               {label}
             </div>
@@ -158,6 +158,8 @@ export default function AdminDashboard() {
         )}
 
         {tab === 'teachers' && <TeacherManager />}
+
+        {tab === 'archive' && <SessionArchive uid={user.uid} />}
 
         {tab === 'launch' && (
           <LaunchSession onLaunch={setActiveSession} />
@@ -381,6 +383,156 @@ function LaunchSession({ onLaunch }) {
             Share the code <strong>{selectedCode || '…'}</strong> with your teacher to distribute to students.
           </p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SessionArchive({ uid }) {
+  const [sessions, setSessions]   = React.useState([]);
+  const [archives, setArchives]   = React.useState([]);
+  const [loading, setLoading]     = React.useState(true);
+  const [archiving, setArchiving] = React.useState(null); // sessionId being archived
+  const [expanded, setExpanded]   = React.useState(null); // archive id expanded
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [s, a] = await Promise.all([getAllSessions(uid), getArchivedSessions(uid)]);
+      setSessions(s);
+      setArchives(a);
+    } finally { setLoading(false); }
+  };
+
+  React.useEffect(() => { load(); }, []);
+
+  const handleArchive = async (session) => {
+    if (!confirm(`Archive session for ${session.schoolName ?? session.gameCode}? This will delete the live data from Firebase.`)) return;
+    setArchiving(session.id);
+    try {
+      await archiveSession(session.id, session.gameCode, uid);
+      await load();
+    } catch (err) {
+      alert('Archive failed: ' + err.message);
+    } finally { setArchiving(null); }
+  };
+
+  const fmtDate = (ts) => {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  };
+
+  if (loading) return <div className="loading-page"><div className="spinner" /></div>;
+
+  return (
+    <div style={{ paddingBottom: 40 }}>
+      {/* ── Live sessions available to archive ── */}
+      <div style={{ marginBottom: 32 }}>
+        <h2 style={{ marginBottom: 4 }}>Live Sessions</h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 20 }}>
+          Sessions currently in Firebase. Archive them to remove the data and save a summary log.
+        </p>
+        {sessions.length === 0 ? (
+          <div className="card"><div className="card-body" style={{ textAlign:'center', color:'var(--text-muted)', padding:32 }}>
+            No live sessions found — all clean! ✓
+          </div></div>
+        ) : (
+          <div className="card" style={{ padding: 0 }}>
+            <table>
+              <thead>
+                <tr><th>School</th><th>Code</th><th>Config</th><th>Status</th><th>Players</th><th>Created</th><th></th></tr>
+              </thead>
+              <tbody>
+                {sessions.map(s => (
+                  <tr key={s.id}>
+                    <td style={{ fontWeight: 600 }}>{s.schoolName ?? '—'}</td>
+                    <td><code style={{ fontFamily:'monospace', fontWeight:700, color:'var(--orange)' }}>{s.gameCode?.replace(/^TENENT-/,'')}</code></td>
+                    <td style={{ fontSize:'0.85rem', color:'var(--text-muted)' }}>{s.gameConfig?.name ?? s.gameConfigId ?? '—'}</td>
+                    <td>
+                      <span className={`badge badge-${s.status === 'ended' ? 'red' : s.status === 'trading' ? 'green' : 'navy'}`} style={{ fontSize:'0.72rem' }}>
+                        {s.status ?? '—'}
+                      </span>
+                    </td>
+                    <td style={{ fontWeight:600 }}>{s.playerCount ?? 0}</td>
+                    <td style={{ fontSize:'0.82rem', color:'var(--text-muted)' }}>{fmtDate(s.createdAt)}</td>
+                    <td>
+                      <button
+                        className="btn btn-sm"
+                        style={{ background:'var(--orange)', color:'white', opacity: archiving === s.id ? 0.6 : 1 }}
+                        disabled={archiving === s.id}
+                        onClick={() => handleArchive(s)}
+                      >
+                        {archiving === s.id ? 'Archiving…' : '🗂️ Archive'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Archive log ── */}
+      <div>
+        <h2 style={{ marginBottom: 4 }}>Archive Log</h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 20 }}>
+          Historical record of completed sessions. Click a row to see the player list.
+        </p>
+        {archives.length === 0 ? (
+          <div className="card"><div className="card-body" style={{ textAlign:'center', color:'var(--text-muted)', padding:32 }}>
+            No archived sessions yet.
+          </div></div>
+        ) : (
+          <div className="card" style={{ padding: 0 }}>
+            <table>
+              <thead>
+                <tr><th>School / Code</th><th>Config</th><th>Players</th><th>Ended</th><th>Archived</th><th></th></tr>
+              </thead>
+              <tbody>
+                {archives.map(a => (
+                  <React.Fragment key={a.id}>
+                    <tr
+                      style={{ cursor:'pointer', background: expanded === a.id ? 'var(--surface-2)' : undefined }}
+                      onClick={() => setExpanded(expanded === a.id ? null : a.id)}
+                    >
+                      <td>
+                        <div style={{ fontWeight:600 }}>{a.schoolName ?? a.gameCode}</div>
+                        <code style={{ fontSize:'0.75rem', color:'var(--orange)', fontFamily:'monospace' }}>{a.gameCode?.replace(/^TENENT-/,'')}</code>
+                      </td>
+                      <td style={{ fontSize:'0.85rem', color:'var(--text-muted)' }}>{a.gameConfigName || a.gameConfigId || '—'}</td>
+                      <td style={{ fontWeight:600 }}>{a.playerCount ?? a.players?.length ?? 0}</td>
+                      <td style={{ fontSize:'0.82rem', color:'var(--text-muted)' }}>{fmtDate(a.endedAt)}</td>
+                      <td style={{ fontSize:'0.82rem', color:'var(--text-muted)' }}>{fmtDate(a.archivedAt)}</td>
+                      <td style={{ color:'var(--text-muted)', fontSize:'0.85rem' }}>{expanded === a.id ? '▲' : '▼'}</td>
+                    </tr>
+                    {expanded === a.id && (
+                      <tr style={{ background:'var(--surface-2)' }}>
+                        <td colSpan={6} style={{ padding:'12px 20px' }}>
+                          <div style={{ fontSize:'0.85rem', fontWeight:600, marginBottom:8, color:'var(--navy)' }}>
+                            Players ({a.players?.length ?? 0})
+                          </div>
+                          {(!a.players || a.players.length === 0) ? (
+                            <span style={{ color:'var(--text-muted)', fontSize:'0.82rem' }}>No player data recorded.</span>
+                          ) : (
+                            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                              {a.players.map((p, i) => (
+                                <span key={i} style={{ background:'white', border:'1px solid var(--border)', borderRadius:6, padding:'4px 10px', fontSize:'0.82rem' }}>
+                                  {p.nickname}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

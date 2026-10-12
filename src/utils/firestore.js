@@ -283,6 +283,97 @@ export async function cleanupSessionPlayers(sessionId, gameCode) {
   }
 }
 
+// ─── Archive ──────────────────────────────────────────────────────────────
+
+/**
+ * Archive a session: write a summary record to /archivedSessions, then
+ * delete all player docs and the session document itself.
+ * Returns the archive record for immediate display.
+ */
+export async function archiveSession(sessionId, gameCode, adminUid) {
+  // 1. Read session doc
+  const sessionSnap = await getDoc(doc(db, 'sessions', sessionId));
+  const sessionData = sessionSnap.exists() ? sessionSnap.data() : {};
+
+  // 2. Read players
+  const playersSnap = await getDocs(collection(db, 'sessions', sessionId, 'players'));
+  const players = playersSnap.docs.map(d => {
+    const p = d.data();
+    return { nickname: p.nickname, finalCash: p.cash ?? 0, holdings: p.holdings ?? {} };
+  });
+
+  // 3. Build archive record
+  const archiveRef = doc(collection(db, 'archivedSessions'));
+  const record = {
+    id: archiveRef.id,
+    sessionId,
+    gameCode,
+    schoolName: sessionData.gameCode ?? gameCode,
+    gameConfigId: sessionData.gameConfigId ?? '',
+    gameConfigName: sessionData.gameConfig?.name ?? '',
+    status: sessionData.status ?? 'unknown',
+    playerCount: players.length,
+    players,
+    createdAt: sessionData.createdAt ?? null,
+    endedAt: sessionData.endedAt ?? null,
+    archivedAt: serverTimestamp(),
+    archivedBy: adminUid,
+  };
+
+  // 4. Write archive, delete players + session in one batch
+  const batch = writeBatch(db);
+  batch.set(archiveRef, record);
+  for (const docSnap of playersSnap.docs) batch.delete(docSnap.ref);
+  if (sessionSnap.exists()) batch.delete(sessionSnap.ref);
+  // Reset activeUsers on the game code
+  batch.update(doc(db, 'gameCodes', gameCode), { activeUsers: 0 });
+  await batch.commit();
+
+  return record;
+}
+
+/**
+ * Fetch all archived sessions visible to this admin, newest first.
+ */
+export async function getArchivedSessions(adminUid) {
+  const q = query(
+    collection(db, 'archivedSessions'),
+    where('archivedBy', '==', adminUid),
+    orderBy('archivedAt', 'desc')
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data());
+}
+
+/**
+ * Fetch all live sessions (status != ended) so the admin can archive them manually.
+ */
+export async function getLiveSessions(gameCode) {
+  const q = query(
+    collection(db, 'sessions'),
+    where('gameCode', '==', gameCode)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/**
+ * Get all sessions across all game codes owned by this admin.
+ */
+export async function getAllSessions(adminUid) {
+  const codes = await getAllGameCodes(adminUid);
+  const allSessions = [];
+  for (const code of codes) {
+    const q = query(collection(db, 'sessions'), where('gameCode', '==', code.code));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      const playersSnap = await getDocs(collection(db, 'sessions', d.id, 'players'));
+      allSessions.push({ id: d.id, playerCount: playersSnap.size, schoolName: code.schoolName, ...d.data() });
+    }
+  }
+  return allSessions.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+}
+
 // ─── Role checks ──────────────────────────────────────────────────────────
 
 export async function isAdmin(uid) {
