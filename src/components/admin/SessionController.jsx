@@ -258,10 +258,9 @@ export default function SessionController({ gameCode, gameConfigId, onClose, adm
     await broadcastStatus(sessionId, 'ended');
     await broadcastSegment(sessionId, -1, null);
     await broadcastCountdown(sessionId, null);
-    setTimeout(async () => {
-      await cleanupSession(sessionId);
-      await cleanupSessionPlayers(sessionId, gameCode);
-    }, 3000);
+    // Only clear RTDB now — keep Firestore players alive so leaderboard stays visible.
+    // Players are deleted when the teacher clicks Close (handleClose).
+    setTimeout(() => cleanupSession(sessionId), 3000);
   };
 
   // ── Force leaderboard (teacher override — bypasses confirmedEnd wait) ─────
