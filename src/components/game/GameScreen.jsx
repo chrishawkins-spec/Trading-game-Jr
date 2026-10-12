@@ -711,18 +711,33 @@ function PnLBreakdown({ player, gameConfig }) {
   };
 
   // Per-asset, per-segment P&L
-  // For each real segment: assetPnl[segIdx][assetId] = change in asset value vs previous snapshot
+  // For each real segment: change in asset value vs previous snapshot.
+  // If the student held 0 of this asset at the END of the segment, any prior
+  // gain/loss was already banked into cash — show 0, not a phantom negative.
   const getSegPnl = (segPos, assetId) => {
     const curr = snapshotArr[segPos];
     if (!curr) return null;
-    const currVal = curr.assetValues[assetId] ?? 0;
+
+    const currHolding = (curr.holdings ?? {})[assetId] ?? 0;
+    const currVal     = curr.assetValues[assetId] ?? 0;
+
     if (segPos === 0) {
-      // First real segment: compare to 0 (started with cash only, no holdings)
-      return currVal;
+      // First real segment: P&L = value at end (started with no holdings)
+      // If they ended the segment with 0 holdings, they bought and sold within
+      // the phase — the gain is in cash; show 0 here to avoid double-counting.
+      return currHolding > 0 ? currVal : 0;
     }
-    const prev = snapshotArr[segPos - 1];
-    if (!prev) return currVal;
-    const prevVal = prev.assetValues[assetId] ?? 0;
+
+    const prev    = snapshotArr[segPos - 1];
+    if (!prev) return currHolding > 0 ? currVal : 0;
+
+    const prevVal     = prev.assetValues[assetId] ?? 0;
+    const prevHolding = (prev.holdings ?? {})[assetId] ?? 0;
+
+    // If held nothing at start AND end of segment, no unrealised P&L here
+    if (prevHolding === 0 && currHolding === 0) return 0;
+
+    // Otherwise: change in unrealised value
     return currVal - prevVal;
   };
 
