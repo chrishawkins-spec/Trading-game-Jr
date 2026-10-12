@@ -160,8 +160,7 @@ export default function GameScreen({ gameCodeData, nickname, playerId }) {
   useEffect(() => {
     if (status === 'leaderboard') {
       setShowEndPopup(false);
-      const totalPlayers = players.length || 1;
-      const secs = Math.min(10, Math.max(3, totalPlayers));
+      const secs = 3;
       setLbCountdown(secs);
       let remaining = secs;
       lbTimerRef.current = setInterval(() => {

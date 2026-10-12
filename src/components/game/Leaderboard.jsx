@@ -23,39 +23,40 @@ export default function Leaderboard({ players, prices, startingCash }) {
           <p style={{ opacity: 0.7 }}>The trading session has ended</p>
         </div>
 
-        {/* Podium: top 3 */}
-        {sorted.length >= 3 && (
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-end', gap: 12, marginBottom: 28 }}>
-            {[1, 0, 2].map(pos => {
-              const p = sorted[pos];
-              if (!p) return null;
-              const val = calcValue(p, prices);
-              const pnl = val - startingCash;
-              const heights = [110, 140, 90];
-              const podiumColors = ['#C0C0C0', '#FFD700', '#CD7F32'];
-              const medals = ['🥈', '🥇', '🥉'];
-              return (
-                <div key={p.id} style={{ textAlign: 'center', flex: 1 }}>
-                  <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>{medals[pos === 0 ? 1 : pos === 1 ? 0 : 2]}</div>
-                  <div style={{ color: 'white', fontWeight: 700, fontSize: '0.95rem', marginBottom: 4 }}>{p.nickname}</div>
-                  <div style={{ color: 'white', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
-                    £{val.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+        {/* Podium: top 3 — display order is 2nd | 1st | 3rd */}
+        {sorted.length >= 3 && (() => {
+          // Each entry: which rank (0-based index into sorted), display config
+          const podium = [
+            { rank: 1, medal: '🥈', color: '#C0C0C0', height: 110, label: '2' },
+            { rank: 0, medal: '🥇', color: '#FFD700', height: 140, label: '1' },
+            { rank: 2, medal: '🥉', color: '#CD7F32', height:  90, label: '3' },
+          ];
+          return (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-end', gap: 12, marginBottom: 28 }}>
+              {podium.map(({ rank, medal, color, height, label }) => {
+                const p = sorted[rank];
+                if (!p) return null;
+                const val = calcValue(p, prices);
+                return (
+                  <div key={p.id ?? rank} style={{ textAlign: 'center', flex: 1 }}>
+                    <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>{medal}</div>
+                    <div style={{ color: 'white', fontWeight: 700, fontSize: '0.95rem', marginBottom: 4 }}>{p.nickname}</div>
+                    <div style={{ color: 'white', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+                      £{val.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+                    </div>
+                    <div style={{
+                      height, background: color, borderRadius: '8px 8px 0 0', marginTop: 8,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: '#333', fontWeight: 700, fontSize: '1.2rem',
+                    }}>
+                      {label}
+                    </div>
                   </div>
-                  <div style={{
-                    height: heights[pos === 0 ? 1 : pos === 1 ? 0 : 2],
-                    background: podiumColors[pos === 0 ? 1 : pos === 1 ? 0 : 2],
-                    borderRadius: '8px 8px 0 0',
-                    marginTop: 8,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#333', fontWeight: 700, fontSize: '1.2rem',
-                  }}>
-                    {pos === 0 ? 2 : pos === 1 ? 1 : 3}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* Full table */}
         <div className="card">
