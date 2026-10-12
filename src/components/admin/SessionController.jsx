@@ -30,6 +30,10 @@ export default function SessionController({ gameCode, gameConfigId, onClose, adm
   const [confirmEnd, setConfirmEnd]   = useState(false);
   const [error, setError]             = useState('');
   const [liveSegIdx, setLiveSegIdx]   = useState(-1);
+  // Frozen snapshot of players + prices taken at the moment the game ends.
+  // Used for the leaderboard so it survives RTDB cleanup and player doc deletion.
+  const [finalPlayers, setFinalPlayers] = useState(null);  // null = game not ended yet
+  const [finalPrices, setFinalPrices]   = useState(null);
 
   const timerRef          = useRef(null);
   const tickRef           = useRef(null);
@@ -254,6 +258,13 @@ export default function SessionController({ gameCode, gameConfigId, onClose, adm
       ).catch(console.error);
     }
 
+    // ── Freeze leaderboard NOW, before any cleanup can wipe players ──────────
+    // Take a deep copy of current players + prices into local state.
+    // The teacher's leaderboard will render from this frozen snapshot
+    // so it survives RTDB cleanup, Firestore listener gaps, or anything else.
+    setFinalPlayers([...players]);
+    setFinalPrices({ ...pricesRef.current });
+
     await updateSession(sessionId, { status: 'ended', endedAt: new Date() });
     await broadcastStatus(sessionId, 'ended');
     await broadcastSegment(sessionId, -1, null);
@@ -307,7 +318,10 @@ export default function SessionController({ gameCode, gameConfigId, onClose, adm
   const readyCount  = players.filter(p => p.readyForSegment === liveSegIdx).length;
   const totalCount  = players.length;
 
-  const sortedPlayers = [...players].sort((a, b) => calcValue(b, prices) - calcValue(a, prices));
+  // Use frozen snapshot for leaderboard once game has ended — immune to cleanup / listener gaps.
+  const leaderboardPlayers = finalPlayers ?? players;
+  const leaderboardPrices  = finalPrices  ?? prices;
+  const sortedPlayers = [...leaderboardPlayers].sort((a, b) => calcValue(b, leaderboardPrices) - calcValue(a, leaderboardPrices));
   const timerColor    = segTimer <= 10 ? 'var(--red)' : segTimer <= 20 ? 'var(--orange)' : 'var(--navy)';
   const startingCash  = gameConfig.startingCash ?? 20000;
 
@@ -509,7 +523,7 @@ export default function SessionController({ gameCode, gameConfigId, onClose, adm
                   <tr><td colSpan={5} style={{ textAlign:'center', color:'var(--text-muted)', padding:24 }}>Waiting for students to join…</td></tr>
                 )}
                 {sortedPlayers.map((p, i) => {
-                  const val     = calcValue(p, prices);
+                  const val     = calcValue(p, leaderboardPrices);
                   const pnl     = val - startingCash;
                   const isReady = p.readyForSegment === liveSegIdx;
                   return (
