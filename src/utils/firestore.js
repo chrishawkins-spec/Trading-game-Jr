@@ -325,8 +325,9 @@ export async function archiveSession(sessionId, gameCode, adminUid) {
   batch.set(archiveRef, record);
   for (const docSnap of playersSnap.docs) batch.delete(docSnap.ref);
   if (sessionSnap.exists()) batch.delete(sessionSnap.ref);
-  // Reset activeUsers on the game code
-  batch.update(doc(db, 'gameCodes', gameCode), { activeUsers: 0 });
+  // Reset activeUsers — game codes are stored as TENENT-XXXX
+  const tenentCode = gameCode.startsWith('TENENT-') ? gameCode : `TENENT-${gameCode}`;
+  batch.update(doc(db, 'gameCodes', tenentCode), { activeUsers: 0 });
   await batch.commit();
 
   return record;
@@ -364,11 +365,17 @@ export async function getAllSessions(adminUid) {
   const codes = await getAllGameCodes(adminUid);
   const allSessions = [];
   for (const code of codes) {
-    const q = query(collection(db, 'sessions'), where('gameCode', '==', code.code));
-    const snap = await getDocs(q);
-    for (const d of snap.docs) {
-      const playersSnap = await getDocs(collection(db, 'sessions', d.id, 'players'));
-      allSessions.push({ id: d.id, playerCount: playersSnap.size, schoolName: code.schoolName, ...d.data() });
+    // Match both "TENENT-XXXX" and bare "XXXX" formats
+    const bareCode = code.code.replace(/^TENENT-/, '');
+    const variants = [code.code, bareCode];
+    for (const variant of variants) {
+      const q = query(collection(db, 'sessions'), where('gameCode', '==', variant));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        if (allSessions.find(s => s.id === d.id)) continue; // dedup
+        const playersSnap = await getDocs(collection(db, 'sessions', d.id, 'players'));
+        allSessions.push({ id: d.id, playerCount: playersSnap.size, schoolName: code.schoolName, ...d.data() });
+      }
     }
   }
   return allSessions.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
