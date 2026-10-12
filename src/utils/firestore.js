@@ -261,6 +261,28 @@ export async function markPlayerReady(sessionId, playerId, segmentIndex) {
   });
 }
 
+/**
+ * Delete all player documents for a session and reset the game code's
+ * activeUsers counter to 0. Called when the teacher ends or closes a session
+ * so stale players don't accumulate across runs.
+ */
+export async function cleanupSessionPlayers(sessionId, gameCode) {
+  try {
+    const snap  = await getDocs(collection(db, 'sessions', sessionId, 'players'));
+    const batch = writeBatch(db);
+    for (const docSnap of snap.docs) {
+      batch.delete(docSnap.ref);
+    }
+    // Reset activeUsers counter on the game code
+    if (gameCode) {
+      batch.update(doc(db, 'gameCodes', gameCode), { activeUsers: 0 });
+    }
+    await batch.commit();
+  } catch (err) {
+    console.warn('[cleanupSessionPlayers] Non-fatal:', err.message);
+  }
+}
+
 // ─── Role checks ──────────────────────────────────────────────────────────
 
 export async function isAdmin(uid) {

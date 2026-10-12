@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   createSession, updateSession, subscribeSession,
   getGameConfig, subscribePlayers, resetAllPlayers,
-  recordSegmentSnapshots,
+  recordSegmentSnapshots, cleanupSessionPlayers,
 } from '../../utils/firestore.js';
 import {
   broadcastPrices, broadcastStatus, broadcastSegment,
@@ -258,7 +258,10 @@ export default function SessionController({ gameCode, gameConfigId, onClose, adm
     await broadcastStatus(sessionId, 'ended');
     await broadcastSegment(sessionId, -1, null);
     await broadcastCountdown(sessionId, null);
-    setTimeout(() => cleanupSession(sessionId), 3000);
+    setTimeout(async () => {
+      await cleanupSession(sessionId);
+      await cleanupSessionPlayers(sessionId, gameCode);
+    }, 3000);
   };
 
   // ── Force leaderboard (teacher override — bypasses confirmedEnd wait) ─────
@@ -269,7 +272,10 @@ export default function SessionController({ gameCode, gameConfigId, onClose, adm
 
   const handleClose = async () => {
     clearTimers();
-    if (sessionId) await cleanupSession(sessionId);
+    if (sessionId) {
+      await cleanupSession(sessionId);
+      await cleanupSessionPlayers(sessionId, gameCode);
+    }
     onClose();
   };
 
