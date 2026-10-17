@@ -720,23 +720,25 @@ function PnLBreakdown({ player, gameConfig }) {
     const currHolding = (curr.holdings ?? {})[assetId] ?? 0;
     const currVal     = curr.assetValues[assetId] ?? 0;
 
+    // If holding is zero at end of segment, the position is closed —
+    // any gain/loss is already in cash. Show 0 to avoid phantom negatives.
+    if (currHolding === 0) return 0;
+
     if (segPos === 0) {
-      // First real segment: P&L = value at end (started with no holdings)
-      // If they ended the segment with 0 holdings, they bought and sold within
-      // the phase — the gain is in cash; show 0 here to avoid double-counting.
-      return currHolding > 0 ? currVal : 0;
+      // First real segment, still holding: P&L = current unrealised value
+      return currVal;
     }
 
     const prev    = snapshotArr[segPos - 1];
-    if (!prev) return currHolding > 0 ? currVal : 0;
+    if (!prev) return currVal;
 
     const prevVal     = prev.assetValues[assetId] ?? 0;
     const prevHolding = (prev.holdings ?? {})[assetId] ?? 0;
 
-    // If held nothing at start AND end of segment, no unrealised P&L here
-    if (prevHolding === 0 && currHolding === 0) return 0;
+    // Held nothing at start of this segment either — no unrealised P&L
+    if (prevHolding === 0) return 0;
 
-    // Otherwise: change in unrealised value
+    // Change in unrealised value while holding throughout
     return currVal - prevVal;
   };
 
