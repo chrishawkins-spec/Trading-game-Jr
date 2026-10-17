@@ -373,6 +373,32 @@ export async function getArchivedSessions(adminUid) {
 }
 
 /**
+ * Hard-delete a session and all its player docs with no archive record.
+ * Use for test/bug sessions you never want to see again.
+ */
+export async function deleteSession(sessionId, gameCode) {
+  const sessionSnap  = await getDoc(doc(db, 'sessions', sessionId));
+  const playersSnap  = await getDocs(collection(db, 'sessions', sessionId, 'players'));
+
+  const batch = writeBatch(db);
+  for (const docSnap of playersSnap.docs) batch.delete(docSnap.ref);
+  if (sessionSnap.exists()) batch.delete(sessionSnap.ref);
+
+  // Try to reset activeUsers on whichever code format exists
+  const tenentCode = gameCode.startsWith('TENENT-') ? gameCode : `TENENT-${gameCode}`;
+  const bareCode   = gameCode.replace(/^TENENT-/, '');
+  for (const c of [tenentCode, bareCode]) {
+    const cs = await getDoc(doc(db, 'gameCodes', c)).catch(() => null);
+    if (cs?.exists()) {
+      batch.update(doc(db, 'gameCodes', c), { activeUsers: 0 });
+      break;
+    }
+  }
+
+  await batch.commit();
+}
+
+/**
  * Fetch all live sessions (status != ended) so the admin can archive them manually.
  */
 export async function getLiveSessions(gameCode) {
