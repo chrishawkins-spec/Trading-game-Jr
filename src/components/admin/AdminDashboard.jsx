@@ -92,14 +92,6 @@ export default function AdminDashboard() {
       </div>
 
       <div style={{ padding: '28px 28px 0' }}>
-        {/* Stats row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
-          <StatCard label="Game Configs" value={configs.length} icon="⚙️" />
-          <StatCard label="Active Codes" value={codes.filter(c => c.status === 'active').length} icon="🎟️" />
-          <StatCard label="Total Plays Used" value={codes.reduce((s, c) => s + (c.playsUsed ?? 0), 0)} icon="🎮" />
-          <StatCard label="Active Users Now" value={codes.reduce((s, c) => s + (c.activeUsers ?? 0), 0)} icon="👥" />
-        </div>
-
         {/* Tabs */}
         <div className="tabs">
           {[
@@ -608,18 +600,3 @@ function LaunchSession({ onLaunch }) {
   );
 }
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, icon }) {
-  return (
-    <div className="card">
-      <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '18px 20px' }}>
-        <div style={{ fontSize: '1.8rem' }}>{icon}</div>
-        <div>
-          <div style={{ fontSize: '1.6rem', fontFamily: 'var(--font-display)', fontWeight: 700, lineHeight: 1 }}>{value}</div>
-          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 3 }}>{label}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
