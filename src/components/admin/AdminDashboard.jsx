@@ -381,28 +381,18 @@ function SessionArchive({ uid }) {
                               <thead>
                                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                                   <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 600, color: 'var(--text-muted)' }}>Nickname</th>
-                                  <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 600, color: 'var(--text-muted)' }}>Final Cash</th>
-                                  <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 600, color: 'var(--text-muted)' }}>Portfolio Value</th>
                                   <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 600, color: 'var(--text-muted)' }}>P/L</th>
-                                  <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 600, color: 'var(--text-muted)' }}>P/L %</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {[...a.players].sort((x, y) => (y.totalValue ?? y.finalCash ?? 0) - (x.totalValue ?? x.finalCash ?? 0)).map((p, i) => {
+                                {[...a.players].sort((x, y) => (y.pnl ?? y.totalValue ?? y.finalCash ?? 0) - (x.pnl ?? x.totalValue ?? x.finalCash ?? 0)).map((p, i) => {
                                   const hasPnl = p.pnl !== null && p.pnl !== undefined;
                                   const pnlColor = !hasPnl ? 'var(--text-muted)' : p.pnl >= 0 ? 'var(--green, #16a34a)' : 'var(--red, #dc2626)';
                                   return (
                                     <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                                       <td style={{ padding: '5px 8px', fontWeight: 500 }}>{p.nickname}</td>
-                                      <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace' }}>£{(p.finalCash ?? 0).toLocaleString()}</td>
-                                      <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                                        {p.totalValue != null ? `£${p.totalValue.toLocaleString()}` : '—'}
-                                      </td>
                                       <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', color: pnlColor, fontWeight: 600 }}>
                                         {hasPnl ? `${p.pnl >= 0 ? '+' : ''}£${p.pnl.toLocaleString()}` : '—'}
-                                      </td>
-                                      <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', color: pnlColor }}>
-                                        {p.pnlPct != null ? `${p.pnlPct >= 0 ? '+' : ''}${p.pnlPct}%` : '—'}
                                       </td>
                                     </tr>
                                   );
