@@ -19,6 +19,7 @@ export default function GameCodeManager() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showAll, setShowAll] = useState(false);
 
   const [form, setForm] = useState({
     gameName: 'Trading Game Jr',
@@ -209,78 +210,112 @@ export default function GameCodeManager() {
               </tr>
             </thead>
             <tbody>
-              {codes.length === 0 && (
-                <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
-                  No game codes yet. Create one above.
-                </td></tr>
-              )}
-              {codes.map(c => {
+              {(() => {
                 const now = Date.now();
-                const start = c.startDate?.toMillis?.() ?? 0;
-                const end = c.endDate?.toMillis?.() ?? Infinity;
-                const isActive = now >= start && now <= end && c.status === 'active';
-                const playsLeft = c.maxPlays - (c.playsUsed ?? 0);
-                const playsExhausted = playsLeft <= 0;
+                const visible = showAll
+                  ? codes
+                  : codes.filter(c => {
+                      const start = c.startDate?.toMillis?.() ?? 0;
+                      const end   = c.endDate?.toMillis?.() ?? Infinity;
+                      return c.status === 'active' && now >= start && now <= end;
+                    });
+                const hiddenCount = codes.length - visible.length;
+
+                if (codes.length === 0) return (
+                  <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+                    No game codes yet. Create one above.
+                  </td></tr>
+                );
+
+                if (visible.length === 0) return (
+                  <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+                    No active codes right now.{' '}
+                    <button className="btn btn-ghost btn-sm" onClick={() => setShowAll(true)}>
+                      Show all {codes.length}
+                    </button>
+                  </td></tr>
+                );
 
                 return (
-                  <tr key={c.code}>
-                    <td>
-                      <code style={{
-                        fontFamily: 'monospace', fontWeight: 700,
-                        fontSize: '0.95rem', letterSpacing: '0.04em',
-                        color: 'var(--navy)',
-                      }}>{c.code.replace(/^TENENT-/, '')}</code>
-                    </td>
-                    <td>
-                      <span style={{
-                        fontSize: '0.8rem', fontWeight: 600,
-                        background: 'rgba(31,29,76,0.08)',
-                        borderRadius: 4, padding: '2px 7px',
-                        color: 'var(--navy)',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {c.gameName ?? 'Trading Game Jr'}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 500 }}>{c.schoolName}</div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{c.contactEmail}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        {formatDate(c.startDate)} – {formatDate(c.endDate)}
-                      </div>
-                    </td>
-                    <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      {c.teacherEmail || <span style={{ fontStyle: 'italic' }}>Not set</span>}
-                    </td>
-                    <td style={{ fontSize: '0.85rem' }}>
-                      {formatDate(c.startDate)}<br />
-                      <span style={{ color: 'var(--text-muted)' }}>to</span><br />
-                      {formatDate(c.endDate)}
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{c.playsUsed ?? 0} / {c.maxPlays}</div>
-                      <div style={{ fontSize: '0.78rem', color: playsExhausted ? 'var(--red)' : 'var(--green)' }}>
-                        {playsExhausted ? '⚠ Exhausted' : `${playsLeft} remaining`}
-                      </div>
-                    </td>
-                    <td style={{ fontWeight: 600 }}>{c.activeUsers ?? 0} / {c.maxUsers}</td>
-                    <td>
-                      {c.status === 'disabled'
-                        ? <span className="badge badge-red">Disabled</span>
-                        : isActive
-                          ? <span className="badge badge-green">Active</span>
-                          : <span className="badge badge-gray">Inactive</span>
-                      }
-                    </td>
-                    <td>
-                      {c.status === 'active'
-                        ? <button className="btn btn-sm btn-danger" onClick={() => handleDisable(c.code)}>Disable</button>
-                        : <button className="btn btn-sm btn-success" onClick={() => handleReenable(c.code)}>Re-enable</button>
-                      }
-                    </td>
-                  </tr>
+                  <>
+                    {visible.map(c => {
+                      const start = c.startDate?.toMillis?.() ?? 0;
+                      const end   = c.endDate?.toMillis?.() ?? Infinity;
+                      const isActive = now >= start && now <= end && c.status === 'active';
+                      const playsLeft = c.maxPlays - (c.playsUsed ?? 0);
+                      const playsExhausted = playsLeft <= 0;
+                      return (
+                        <tr key={c.code}>
+                          <td>
+                            <code style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.95rem', letterSpacing: '0.04em', color: 'var(--navy)' }}>
+                              {c.code.replace(/^TENENT-/, '')}
+                            </code>
+                          </td>
+                          <td>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 600, background: 'rgba(31,29,76,0.08)', borderRadius: 4, padding: '2px 7px', color: 'var(--navy)', whiteSpace: 'nowrap' }}>
+                              {c.gameName ?? 'Trading Game Jr'}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 500 }}>{c.schoolName}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{c.contactEmail}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              {formatDate(c.startDate)} – {formatDate(c.endDate)}
+                            </div>
+                          </td>
+                          <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                            {c.teacherEmail || <span style={{ fontStyle: 'italic' }}>Not set</span>}
+                          </td>
+                          <td style={{ fontSize: '0.85rem' }}>
+                            {formatDate(c.startDate)}<br />
+                            <span style={{ color: 'var(--text-muted)' }}>to</span><br />
+                            {formatDate(c.endDate)}
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 600 }}>{c.playsUsed ?? 0} / {c.maxPlays}</div>
+                            <div style={{ fontSize: '0.78rem', color: playsExhausted ? 'var(--red)' : 'var(--green)' }}>
+                              {playsExhausted ? '⚠ Exhausted' : `${playsLeft} remaining`}
+                            </div>
+                          </td>
+                          <td style={{ fontWeight: 600 }}>{c.activeUsers ?? 0} / {c.maxUsers}</td>
+                          <td>
+                            {c.status === 'disabled'
+                              ? <span className="badge badge-red">Disabled</span>
+                              : isActive
+                                ? <span className="badge badge-green">Active</span>
+                                : <span className="badge badge-gray">Inactive</span>
+                            }
+                          </td>
+                          <td>
+                            {c.status === 'active'
+                              ? <button className="btn btn-sm btn-danger" onClick={() => handleDisable(c.code)}>Disable</button>
+                              : <button className="btn btn-sm btn-success" onClick={() => handleReenable(c.code)}>Re-enable</button>
+                            }
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {hiddenCount > 0 && !showAll && (
+                      <tr>
+                        <td colSpan={9} style={{ textAlign: 'center', padding: '10px 16px', borderTop: '1px solid var(--border)' }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setShowAll(true)}>
+                            + Show {hiddenCount} inactive / expired code{hiddenCount !== 1 ? 's' : ''}
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                    {showAll && codes.length > 0 && (
+                      <tr>
+                        <td colSpan={9} style={{ textAlign: 'center', padding: '10px 16px', borderTop: '1px solid var(--border)' }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setShowAll(false)}>
+                            Show active only
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 );
-              })}
+              })()}
             </tbody>
           </table>
         </div>
