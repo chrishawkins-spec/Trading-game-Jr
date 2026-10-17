@@ -295,19 +295,35 @@ export async function archiveSession(sessionId, gameCode, adminUid) {
   const sessionSnap = await getDoc(doc(db, 'sessions', sessionId));
   const sessionData = sessionSnap.exists() ? sessionSnap.data() : {};
 
-  // 2. Read players
-  const playersSnap = await getDocs(collection(db, 'sessions', sessionId, 'players'));
+  // 2. Read players — compute P/L using startingCash from game config
+  const startingCash = sessionData.gameConfig?.startingCash ?? 0;
+  const playersSnap  = await getDocs(collection(db, 'sessions', sessionId, 'players'));
   const players = playersSnap.docs.map(d => {
     const p = d.data();
-    return { nickname: p.nickname, finalCash: p.cash ?? 0, holdings: p.holdings ?? {} };
+    // Total portfolio value = cash + value of all holdings at final prices
+    const currentPrices = sessionData.currentPrices ?? {};
+    const holdingsValue = Object.entries(p.holdings ?? {})
+      .reduce((sum, [assetId, qty]) => sum + (currentPrices[assetId] ?? 0) * qty, 0);
+    const totalValue = (p.cash ?? 0) + holdingsValue;
+    const pnl        = startingCash > 0 ? totalValue - startingCash : null;
+    const pnlPct     = startingCash > 0 ? ((pnl / startingCash) * 100) : null;
+    return {
+      nickname:    p.nickname,
+      finalCash:   Math.round(p.cash ?? 0),
+      holdings:    p.holdings ?? {},
+      totalValue:  Math.round(totalValue),
+      pnl:         pnl !== null ? Math.round(pnl) : null,
+      pnlPct:      pnlPct !== null ? Math.round(pnlPct * 10) / 10 : null,
+    };
   });
 
   // 3. Build archive record — schoolName and gameName come from the game code doc
-  const archiveRef = doc(collection(db, 'archivedSessions'));
-  const tenentCode = gameCode.startsWith('TENENT-') ? gameCode : `TENENT-${gameCode}`;
-  const codeSnap   = await getDoc(doc(db, 'gameCodes', tenentCode)).catch(() => null);
-  const schoolName = codeSnap?.data()?.schoolName ?? sessionData.schoolName ?? gameCode;
-  const gameName   = codeSnap?.data()?.gameName   ?? 'Trading Game Jr';
+  const archiveRef   = doc(collection(db, 'archivedSessions'));
+  const tenentCode   = gameCode.startsWith('TENENT-') ? gameCode : `TENENT-${gameCode}`;
+  const codeSnap     = await getDoc(doc(db, 'gameCodes', tenentCode)).catch(() => null);
+  const schoolName   = codeSnap?.data()?.schoolName   ?? sessionData.schoolName ?? gameCode;
+  const gameName     = codeSnap?.data()?.gameName     ?? 'Trading Game Jr';
+  const teacherEmail = codeSnap?.data()?.teacherEmail ?? '';
 
   const record = {
     id: archiveRef.id,
@@ -315,12 +331,15 @@ export async function archiveSession(sessionId, gameCode, adminUid) {
     gameCode,
     schoolName,
     gameName,
-    gameConfigId:   sessionData.gameConfigId  ?? '',
+    teacherEmail,
+    startingCash,
+    gameConfigId:   sessionData.gameConfigId   ?? '',
     gameConfigName: sessionData.gameConfig?.name ?? '',
-    status:         sessionData.status        ?? 'unknown',
+    status:         sessionData.status          ?? 'unknown',
     playerCount:    players.length,
     players,
     createdAt:  sessionData.createdAt  ?? null,
+    startedAt:  sessionData.startedAt  ?? null,
     endedAt:    sessionData.endedAt    ?? null,
     archivedAt: serverTimestamp(),
     archivedBy: adminUid,

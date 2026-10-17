@@ -330,10 +330,11 @@ function SessionArchive({ uid }) {
                 <tr>
                   <th>School / Code</th>
                   <th>Game</th>
+                  <th>Teacher</th>
                   <th>Config</th>
                   <th>Players</th>
+                  <th>Started</th>
                   <th>Ended</th>
-                  <th>Archived</th>
                   <th></th>
                 </tr>
               </thead>
@@ -355,28 +356,59 @@ function SessionArchive({ uid }) {
                           {a.gameName ?? 'Trading Game Jr'}
                         </span>
                       </td>
+                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{a.teacherEmail || '—'}</td>
                       <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{a.gameConfigName || a.gameConfigId || '—'}</td>
                       <td style={{ fontWeight: 600 }}>{a.playerCount ?? a.players?.length ?? 0}</td>
+                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{fmtDate(a.startedAt ?? a.createdAt)}</td>
                       <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{fmtDate(a.endedAt)}</td>
-                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{fmtDate(a.archivedAt)}</td>
                       <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{expanded === a.id ? '▲' : '▼'}</td>
                     </tr>
                     {expanded === a.id && (
                       <tr style={{ background: 'var(--surface-2)' }}>
-                        <td colSpan={6} style={{ padding: '12px 20px' }}>
+                        <td colSpan={8} style={{ padding: '12px 20px' }}>
                           <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8, color: 'var(--navy)' }}>
                             Players ({a.players?.length ?? 0})
+                            {a.startingCash > 0 && (
+                              <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 10 }}>
+                                Starting cash: £{a.startingCash.toLocaleString()}
+                              </span>
+                            )}
                           </div>
                           {(!a.players || a.players.length === 0) ? (
                             <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>No player data recorded.</span>
                           ) : (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                              {a.players.map((p, i) => (
-                                <span key={i} style={{ background: 'white', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: '0.82rem' }}>
-                                  {p.nickname}
-                                </span>
-                              ))}
-                            </div>
+                            <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                  <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 600, color: 'var(--text-muted)' }}>Nickname</th>
+                                  <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 600, color: 'var(--text-muted)' }}>Final Cash</th>
+                                  <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 600, color: 'var(--text-muted)' }}>Portfolio Value</th>
+                                  <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 600, color: 'var(--text-muted)' }}>P/L</th>
+                                  <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 600, color: 'var(--text-muted)' }}>P/L %</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {[...a.players].sort((x, y) => (y.totalValue ?? y.finalCash ?? 0) - (x.totalValue ?? x.finalCash ?? 0)).map((p, i) => {
+                                  const hasPnl = p.pnl !== null && p.pnl !== undefined;
+                                  const pnlColor = !hasPnl ? 'var(--text-muted)' : p.pnl >= 0 ? 'var(--green, #16a34a)' : 'var(--red, #dc2626)';
+                                  return (
+                                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                                      <td style={{ padding: '5px 8px', fontWeight: 500 }}>{p.nickname}</td>
+                                      <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace' }}>£{(p.finalCash ?? 0).toLocaleString()}</td>
+                                      <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                                        {p.totalValue != null ? `£${p.totalValue.toLocaleString()}` : '—'}
+                                      </td>
+                                      <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', color: pnlColor, fontWeight: 600 }}>
+                                        {hasPnl ? `${p.pnl >= 0 ? '+' : ''}£${p.pnl.toLocaleString()}` : '—'}
+                                      </td>
+                                      <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', color: pnlColor }}>
+                                        {p.pnlPct != null ? `${p.pnlPct >= 0 ? '+' : ''}${p.pnlPct}%` : '—'}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           )}
                         </td>
                       </tr>
