@@ -3,7 +3,11 @@ import { useAuth } from '../../hooks/useAuth.jsx';
 import GameConfigBuilder from './GameConfigBuilder.jsx';
 import GameCodeManager from './GameCodeManager.jsx';
 import SessionController from './SessionController.jsx';
-import { getGameConfigs, getAllGameCodes, deleteGameConfig, getAllTeachers, getAllSessions, archiveSession, getArchivedSessions } from '../../utils/firestore.js';
+import {
+  getGameConfigs, getAllGameCodes, deleteGameConfig, getAllTeachers,
+  getAllSessions, archiveSession, getArchivedSessions, deleteSession,
+  updateGameCode,
+} from '../../utils/firestore.js';
 import { formatDate } from '../../utils/gameCode.js';
 
 export default function AdminDashboard() {
@@ -98,7 +102,13 @@ export default function AdminDashboard() {
 
         {/* Tabs */}
         <div className="tabs">
-          {[['codes', '🎟️ Game Codes'], ['configs', '⚙️ Game Configs'], ['teachers', '🎓 Teachers'], ['launch', '🚀 Launch Session'], ['archive', '🗂️ Session Archive']].map(([id, label]) => (
+          {[
+            ['codes',   '🎟️ Game Codes'],
+            ['configs', '⚙️ Game Configs'],
+            ['teachers','🎓 Teachers'],
+            ['launch',  '🚀 Launch Session'],
+            ['archive', '🗂️ Session Archive'],
+          ].map(([id, label]) => (
             <div key={id} className={`tab${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>
               {label}
             </div>
@@ -106,7 +116,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Tab content */}
-        {tab === 'codes' && <GameCodeManager />}
+        {tab === 'codes' && <GameCodeManager onCodesChanged={load} />}
 
         {tab === 'configs' && (
           <div>
@@ -169,6 +179,217 @@ export default function AdminDashboard() {
   );
 }
 
+// ─── Session Archive ──────────────────────────────────────────────────────────
+
+function SessionArchive({ uid }) {
+  const [sessions,  setSessions]  = React.useState([]);
+  const [archives,  setArchives]  = React.useState([]);
+  const [loading,   setLoading]   = React.useState(true);
+  const [working,   setWorking]   = React.useState(null); // sessionId currently being acted on
+  const [expanded,  setExpanded]  = React.useState(null); // archive id expanded in log
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [s, a] = await Promise.all([getAllSessions(uid), getArchivedSessions(uid)]);
+      setSessions(s);
+      setArchives(a);
+    } finally { setLoading(false); }
+  };
+
+  React.useEffect(() => { load(); }, []);
+
+  const handleArchive = async (session) => {
+    if (!confirm(`Archive session for ${session.schoolName ?? session.gameCode}?\n\nThis saves a permanent record then removes the live data from Firebase.`)) return;
+    setWorking(session.id);
+    try {
+      await archiveSession(session.id, session.gameCode, uid);
+      await load();
+    } catch (err) {
+      alert('Archive failed: ' + err.message);
+    } finally { setWorking(null); }
+  };
+
+  const handleDelete = async (session) => {
+    if (!confirm(`Permanently delete session for ${session.schoolName ?? session.gameCode}?\n\nNo record will be kept. Use this for test sessions only.`)) return;
+    setWorking(session.id);
+    try {
+      await deleteSession(session.id, session.gameCode);
+      await load();
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    } finally { setWorking(null); }
+  };
+
+  const fmtDate = (ts) => {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  if (loading) return <div className="loading-page"><div className="spinner" /></div>;
+
+  return (
+    <div style={{ paddingBottom: 40 }}>
+
+      {/* ── Live sessions ── */}
+      <div style={{ marginBottom: 32 }}>
+        <h2 style={{ marginBottom: 4 }}>Live Sessions</h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 20 }}>
+          Sessions currently stored in Firebase.
+          <strong style={{ color: 'var(--navy)' }}> Archive</strong> a real session to save a permanent record and free Firebase.
+          <strong style={{ color: 'var(--red)' }}> Delete</strong> a test session with no trace.
+        </p>
+
+        {sessions.length === 0 ? (
+          <div className="card">
+            <div className="card-body" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+              No live sessions found — all clean! ✓
+            </div>
+          </div>
+        ) : (
+          <div className="card" style={{ padding: 0 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>School</th>
+                  <th>Code</th>
+                  <th>Config</th>
+                  <th>Status</th>
+                  <th>Players</th>
+                  <th>Created</th>
+                  <th style={{ width: 180 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.map(s => {
+                  const busy = working === s.id;
+                  return (
+                    <tr key={s.id}>
+                      <td style={{ fontWeight: 600 }}>{s.schoolName ?? '—'}</td>
+                      <td>
+                        <code style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--orange)' }}>
+                          {s.gameCode?.replace(/^TENENT-/, '')}
+                        </code>
+                      </td>
+                      <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                        {s.gameConfig?.name ?? s.gameConfigId ?? '—'}
+                      </td>
+                      <td>
+                        <span className={`badge badge-${s.status === 'ended' ? 'red' : s.status === 'trading' ? 'green' : 'navy'}`} style={{ fontSize: '0.72rem' }}>
+                          {s.status ?? '—'}
+                        </span>
+                      </td>
+                      <td style={{ fontWeight: 600 }}>{s.playerCount ?? 0}</td>
+                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{fmtDate(s.createdAt)}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            className="btn btn-sm"
+                            style={{ background: 'var(--navy)', color: 'white', opacity: busy ? 0.5 : 1 }}
+                            disabled={busy}
+                            onClick={() => handleArchive(s)}
+                            title="Save a permanent record, then remove from Firebase"
+                          >
+                            {busy ? '…' : '🗂️ Archive'}
+                          </button>
+                          <button
+                            className="btn btn-sm"
+                            style={{ background: '#fee2e2', color: 'var(--red)', border: '1px solid #fca5a5', opacity: busy ? 0.5 : 1 }}
+                            disabled={busy}
+                            onClick={() => handleDelete(s)}
+                            title="Permanently delete with no record — for test sessions"
+                          >
+                            {busy ? '…' : '🗑️ Delete'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Archive log ── */}
+      <div>
+        <h2 style={{ marginBottom: 4 }}>Archive Log</h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 20 }}>
+          Permanent record of completed sessions. Click a row to see the player list.
+        </p>
+        {archives.length === 0 ? (
+          <div className="card">
+            <div className="card-body" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+              No archived sessions yet.
+            </div>
+          </div>
+        ) : (
+          <div className="card" style={{ padding: 0 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>School / Code</th>
+                  <th>Config</th>
+                  <th>Players</th>
+                  <th>Ended</th>
+                  <th>Archived</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {archives.map(a => (
+                  <React.Fragment key={a.id}>
+                    <tr
+                      style={{ cursor: 'pointer', background: expanded === a.id ? 'var(--surface-2)' : undefined }}
+                      onClick={() => setExpanded(expanded === a.id ? null : a.id)}
+                    >
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{a.schoolName ?? a.gameCode}</div>
+                        <code style={{ fontSize: '0.75rem', color: 'var(--orange)', fontFamily: 'monospace' }}>
+                          {a.gameCode?.replace(/^TENENT-/, '')}
+                        </code>
+                      </td>
+                      <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{a.gameConfigName || a.gameConfigId || '—'}</td>
+                      <td style={{ fontWeight: 600 }}>{a.playerCount ?? a.players?.length ?? 0}</td>
+                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{fmtDate(a.endedAt)}</td>
+                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{fmtDate(a.archivedAt)}</td>
+                      <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{expanded === a.id ? '▲' : '▼'}</td>
+                    </tr>
+                    {expanded === a.id && (
+                      <tr style={{ background: 'var(--surface-2)' }}>
+                        <td colSpan={6} style={{ padding: '12px 20px' }}>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8, color: 'var(--navy)' }}>
+                            Players ({a.players?.length ?? 0})
+                          </div>
+                          {(!a.players || a.players.length === 0) ? (
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>No player data recorded.</span>
+                          ) : (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                              {a.players.map((p, i) => (
+                                <span key={i} style={{ background: 'white', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: '0.82rem' }}>
+                                  {p.nickname}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Teacher Manager ──────────────────────────────────────────────────────────
+
 function TeacherManager() {
   const { user } = useAuth();
   const [teachers, setTeachers] = React.useState([]);
@@ -194,9 +415,6 @@ function TeacherManager() {
     e.preventDefault();
     setSaving(true); setMsg('');
     try {
-      // Teacher accounts are created in Firebase Auth via Admin SDK on the server,
-      // or manually in the Firebase Console. Here we create the Firestore record
-      // that links their UID to their role. Instructions are shown to the admin.
       setMsg(`To complete: go to Firebase Console → Authentication → Add user with email "${form.email}", then copy their UID and add a Firestore document at admins/{UID} with: role="teacher", email="${form.email}", gameCode="${form.gameCode}", createdBy="${user.uid}"`);
       setShowCreate(false);
     } finally { setSaving(false); }
@@ -206,10 +424,10 @@ function TeacherManager() {
 
   return (
     <div>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h2 style={{ marginBottom:4 }}>Teacher Accounts</h2>
-          <p style={{ color:'var(--text-muted)', fontSize:'0.9rem' }}>
+          <h2 style={{ marginBottom: 4 }}>Teacher Accounts</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
             Teachers can run live sessions for their assigned game code. They cannot create or edit configurations.
           </p>
         </div>
@@ -217,32 +435,32 @@ function TeacherManager() {
       </div>
 
       {msg && (
-        <div className="alert alert-info" style={{ marginBottom:20 }}>
-          <div style={{ fontWeight:600, marginBottom:8 }}>How to create a teacher account:</div>
-          <ol style={{ paddingLeft:20, lineHeight:2, fontSize:'0.88rem' }}>
+        <div className="alert alert-info" style={{ marginBottom: 20 }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>How to create a teacher account:</div>
+          <ol style={{ paddingLeft: 20, lineHeight: 2, fontSize: '0.88rem' }}>
             <li>Go to <strong>Firebase Console → Authentication → Users → Add user</strong></li>
             <li>Enter the teacher's email and a temporary password</li>
             <li>Copy the <strong>User UID</strong> shown in the users table</li>
             <li>Go to <strong>Firestore → admins → Add document</strong></li>
-            <li>Set Document ID to the UID, then add fields:<br/>
-              <code style={{ background:'#e0e7ff', padding:'2px 6px', borderRadius:4 }}>role = "teacher"</code>{' '}
-              <code style={{ background:'#e0e7ff', padding:'2px 6px', borderRadius:4 }}>email = "{form.email}"</code>{' '}
-              <code style={{ background:'#e0e7ff', padding:'2px 6px', borderRadius:4 }}>gameCode = "{form.gameCode}"</code>{' '}
-              <code style={{ background:'#e0e7ff', padding:'2px 6px', borderRadius:4 }}>createdBy = "{user.uid}"</code>
+            <li>Set Document ID to the UID, then add fields:<br />
+              <code style={{ background: '#e0e7ff', padding: '2px 6px', borderRadius: 4 }}>role = "teacher"</code>{' '}
+              <code style={{ background: '#e0e7ff', padding: '2px 6px', borderRadius: 4 }}>email = "{form.email}"</code>{' '}
+              <code style={{ background: '#e0e7ff', padding: '2px 6px', borderRadius: 4 }}>gameCode = "{form.gameCode}"</code>{' '}
+              <code style={{ background: '#e0e7ff', padding: '2px 6px', borderRadius: 4 }}>createdBy = "{user.uid}"</code>
             </li>
           </ol>
         </div>
       )}
 
       {showCreate && (
-        <div className="card" style={{ marginBottom:24, borderColor:'var(--orange)', borderWidth:2 }}>
+        <div className="card" style={{ marginBottom: 24, borderColor: 'var(--orange)', borderWidth: 2 }}>
           <div className="card-header">
-            <h3 style={{ fontSize:'1rem' }}>New Teacher Account</h3>
+            <h3 style={{ fontSize: '1rem' }}>New Teacher Account</h3>
             <button className="btn btn-ghost btn-sm" onClick={() => setShowCreate(false)}>Cancel</button>
           </div>
           <div className="card-body">
             <form onSubmit={handleCreate}>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div className="form-group">
                   <label className="form-label">Teacher Email *</label>
                   <input className="form-input" type="email" required value={form.email}
@@ -269,11 +487,11 @@ function TeacherManager() {
       )}
 
       <div className="card">
-        <div style={{ padding:'16px 20px', borderBottom:'1px solid var(--border)', background:'#fffbeb' }}>
-          <div style={{ fontWeight:600, fontSize:'0.85rem', color:'#92400e' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', background: '#fffbeb' }}>
+          <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#92400e' }}>
             🔒 Role separation — what teachers see vs admins
           </div>
-          <div style={{ fontSize:'0.82rem', color:'#92400e', marginTop:4, lineHeight:1.6 }}>
+          <div style={{ fontSize: '0.82rem', color: '#92400e', marginTop: 4, lineHeight: 1.6 }}>
             Teachers log in to the same URL but see only their assigned session. They can start, pause, and end trading — but cannot create codes, edit game configs, or view other schools' data.
           </div>
         </div>
@@ -284,7 +502,7 @@ function TeacherManager() {
             </thead>
             <tbody>
               {teachers.length === 0 && (
-                <tr><td colSpan={3} style={{ textAlign:'center', color:'var(--text-muted)', padding:32 }}>
+                <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
                   No teacher accounts yet.
                 </td></tr>
               )}
@@ -292,9 +510,9 @@ function TeacherManager() {
                 const code = codes.find(c => c.code === t.gameCode);
                 return (
                   <tr key={t.uid}>
-                    <td style={{ fontWeight:500 }}>{t.email}</td>
-                    <td><code style={{ fontFamily:'monospace', fontWeight:700, color:'var(--navy)' }}>{t.gameCode}</code></td>
-                    <td style={{ color:'var(--text-muted)' }}>{code?.schoolName ?? '—'}</td>
+                    <td style={{ fontWeight: 500 }}>{t.email}</td>
+                    <td><code style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--navy)' }}>{t.gameCode}</code></td>
+                    <td style={{ color: 'var(--text-muted)' }}>{code?.schoolName ?? '—'}</td>
                   </tr>
                 );
               })}
@@ -305,6 +523,8 @@ function TeacherManager() {
     </div>
   );
 }
+
+// ─── Launch Session ───────────────────────────────────────────────────────────
 
 function LaunchSession({ onLaunch }) {
   const { user } = useAuth();
@@ -328,11 +548,11 @@ function LaunchSession({ onLaunch }) {
     load();
   }, [user]);
 
-  const code = codes.find(c => c.code === selectedCode);
+  const code   = codes.find(c => c.code === selectedCode);
   const config = code ? configs.find(c => c.id === code.gameConfigId) : null;
 
   const handleLaunch = () => {
-    if (!code) { setError('Please select a game code.'); return; }
+    if (!code)   { setError('Please select a game code.'); return; }
     if (!config) { setError('The game config for this code was not found.'); return; }
     if (code.status !== 'active') { setError('This code is disabled.'); return; }
     onLaunch({ gameCode: code.code, gameConfigId: code.gameConfigId });
@@ -388,155 +608,7 @@ function LaunchSession({ onLaunch }) {
   );
 }
 
-function SessionArchive({ uid }) {
-  const [sessions, setSessions]   = React.useState([]);
-  const [archives, setArchives]   = React.useState([]);
-  const [loading, setLoading]     = React.useState(true);
-  const [archiving, setArchiving] = React.useState(null); // sessionId being archived
-  const [expanded, setExpanded]   = React.useState(null); // archive id expanded
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [s, a] = await Promise.all([getAllSessions(uid), getArchivedSessions(uid)]);
-      setSessions(s);
-      setArchives(a);
-    } finally { setLoading(false); }
-  };
-
-  React.useEffect(() => { load(); }, []);
-
-  const handleArchive = async (session) => {
-    if (!confirm(`Archive session for ${session.schoolName ?? session.gameCode}? This will delete the live data from Firebase.`)) return;
-    setArchiving(session.id);
-    try {
-      await archiveSession(session.id, session.gameCode, uid);
-      await load();
-    } catch (err) {
-      alert('Archive failed: ' + err.message);
-    } finally { setArchiving(null); }
-  };
-
-  const fmtDate = (ts) => {
-    if (!ts) return '—';
-    const d = ts.toDate ? ts.toDate() : new Date(ts);
-    return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
-  };
-
-  if (loading) return <div className="loading-page"><div className="spinner" /></div>;
-
-  return (
-    <div style={{ paddingBottom: 40 }}>
-      {/* ── Live sessions available to archive ── */}
-      <div style={{ marginBottom: 32 }}>
-        <h2 style={{ marginBottom: 4 }}>Live Sessions</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 20 }}>
-          Sessions currently in Firebase. Archive them to remove the data and save a summary log.
-        </p>
-        {sessions.length === 0 ? (
-          <div className="card"><div className="card-body" style={{ textAlign:'center', color:'var(--text-muted)', padding:32 }}>
-            No live sessions found — all clean! ✓
-          </div></div>
-        ) : (
-          <div className="card" style={{ padding: 0 }}>
-            <table>
-              <thead>
-                <tr><th>School</th><th>Code</th><th>Config</th><th>Status</th><th>Players</th><th>Created</th><th></th></tr>
-              </thead>
-              <tbody>
-                {sessions.map(s => (
-                  <tr key={s.id}>
-                    <td style={{ fontWeight: 600 }}>{s.schoolName ?? '—'}</td>
-                    <td><code style={{ fontFamily:'monospace', fontWeight:700, color:'var(--orange)' }}>{s.gameCode?.replace(/^TENENT-/,'')}</code></td>
-                    <td style={{ fontSize:'0.85rem', color:'var(--text-muted)' }}>{s.gameConfig?.name ?? s.gameConfigId ?? '—'}</td>
-                    <td>
-                      <span className={`badge badge-${s.status === 'ended' ? 'red' : s.status === 'trading' ? 'green' : 'navy'}`} style={{ fontSize:'0.72rem' }}>
-                        {s.status ?? '—'}
-                      </span>
-                    </td>
-                    <td style={{ fontWeight:600 }}>{s.playerCount ?? 0}</td>
-                    <td style={{ fontSize:'0.82rem', color:'var(--text-muted)' }}>{fmtDate(s.createdAt)}</td>
-                    <td>
-                      <button
-                        className="btn btn-sm"
-                        style={{ background:'var(--orange)', color:'white', opacity: archiving === s.id ? 0.6 : 1 }}
-                        disabled={archiving === s.id}
-                        onClick={() => handleArchive(s)}
-                      >
-                        {archiving === s.id ? 'Archiving…' : '🗂️ Archive'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* ── Archive log ── */}
-      <div>
-        <h2 style={{ marginBottom: 4 }}>Archive Log</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 20 }}>
-          Historical record of completed sessions. Click a row to see the player list.
-        </p>
-        {archives.length === 0 ? (
-          <div className="card"><div className="card-body" style={{ textAlign:'center', color:'var(--text-muted)', padding:32 }}>
-            No archived sessions yet.
-          </div></div>
-        ) : (
-          <div className="card" style={{ padding: 0 }}>
-            <table>
-              <thead>
-                <tr><th>School / Code</th><th>Config</th><th>Players</th><th>Ended</th><th>Archived</th><th></th></tr>
-              </thead>
-              <tbody>
-                {archives.map(a => (
-                  <React.Fragment key={a.id}>
-                    <tr
-                      style={{ cursor:'pointer', background: expanded === a.id ? 'var(--surface-2)' : undefined }}
-                      onClick={() => setExpanded(expanded === a.id ? null : a.id)}
-                    >
-                      <td>
-                        <div style={{ fontWeight:600 }}>{a.schoolName ?? a.gameCode}</div>
-                        <code style={{ fontSize:'0.75rem', color:'var(--orange)', fontFamily:'monospace' }}>{a.gameCode?.replace(/^TENENT-/,'')}</code>
-                      </td>
-                      <td style={{ fontSize:'0.85rem', color:'var(--text-muted)' }}>{a.gameConfigName || a.gameConfigId || '—'}</td>
-                      <td style={{ fontWeight:600 }}>{a.playerCount ?? a.players?.length ?? 0}</td>
-                      <td style={{ fontSize:'0.82rem', color:'var(--text-muted)' }}>{fmtDate(a.endedAt)}</td>
-                      <td style={{ fontSize:'0.82rem', color:'var(--text-muted)' }}>{fmtDate(a.archivedAt)}</td>
-                      <td style={{ color:'var(--text-muted)', fontSize:'0.85rem' }}>{expanded === a.id ? '▲' : '▼'}</td>
-                    </tr>
-                    {expanded === a.id && (
-                      <tr style={{ background:'var(--surface-2)' }}>
-                        <td colSpan={6} style={{ padding:'12px 20px' }}>
-                          <div style={{ fontSize:'0.85rem', fontWeight:600, marginBottom:8, color:'var(--navy)' }}>
-                            Players ({a.players?.length ?? 0})
-                          </div>
-                          {(!a.players || a.players.length === 0) ? (
-                            <span style={{ color:'var(--text-muted)', fontSize:'0.82rem' }}>No player data recorded.</span>
-                          ) : (
-                            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-                              {a.players.map((p, i) => (
-                                <span key={i} style={{ background:'white', border:'1px solid var(--border)', borderRadius:6, padding:'4px 10px', fontSize:'0.82rem' }}>
-                                  {p.nickname}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+// ─── Stat Card ────────────────────────────────────────────────────────────────
 
 function StatCard({ label, value, icon }) {
   return (
