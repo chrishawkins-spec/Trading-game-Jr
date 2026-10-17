@@ -283,7 +283,7 @@ export async function cleanupSessionPlayers(sessionId, gameCode) {
   }
 }
 
-// ─── Archive ──────────────────────────────────────────────────────────────────────────────
+// ─── Archive ──────────────────────────────────────────────────────────────
 
 /**
  * Archive a session: write a summary record to /archivedSessions, then
@@ -302,17 +302,19 @@ export async function archiveSession(sessionId, gameCode, adminUid) {
     return { nickname: p.nickname, finalCash: p.cash ?? 0, holdings: p.holdings ?? {} };
   });
 
-  // 3. Build archive record — look up schoolName from gameCodes, not the session doc
+  // 3. Build archive record — schoolName and gameName come from the game code doc
   const archiveRef = doc(collection(db, 'archivedSessions'));
   const tenentCode = gameCode.startsWith('TENENT-') ? gameCode : `TENENT-${gameCode}`;
   const codeSnap   = await getDoc(doc(db, 'gameCodes', tenentCode)).catch(() => null);
   const schoolName = codeSnap?.data()?.schoolName ?? sessionData.schoolName ?? gameCode;
+  const gameName   = codeSnap?.data()?.gameName   ?? 'Trading Game Jr';
 
   const record = {
     id: archiveRef.id,
     sessionId,
     gameCode,
     schoolName,
+    gameName,
     gameConfigId:   sessionData.gameConfigId  ?? '',
     gameConfigName: sessionData.gameConfig?.name ?? '',
     status:         sessionData.status        ?? 'unknown',
@@ -329,39 +331,13 @@ export async function archiveSession(sessionId, gameCode, adminUid) {
   batch.set(archiveRef, record);
   for (const docSnap of playersSnap.docs) batch.delete(docSnap.ref);
   if (sessionSnap.exists()) batch.delete(sessionSnap.ref);
-  // Reset activeUsers on the game code (if it exists)
+  // Reset activeUsers on the game code
   if (codeSnap?.exists()) {
     batch.update(doc(db, 'gameCodes', tenentCode), { activeUsers: 0 });
   }
   await batch.commit();
 
   return record;
-}
-
-/**
- * Hard-delete a session and all its player docs with no archive record.
- * Use for test/bug sessions you never want to see again.
- */
-export async function deleteSession(sessionId, gameCode) {
-  const sessionSnap = await getDoc(doc(db, 'sessions', sessionId));
-  const playersSnap = await getDocs(collection(db, 'sessions', sessionId, 'players'));
-
-  const batch = writeBatch(db);
-  for (const docSnap of playersSnap.docs) batch.delete(docSnap.ref);
-  if (sessionSnap.exists()) batch.delete(sessionSnap.ref);
-
-  // Try to reset activeUsers on whichever code format exists
-  const tenentCode = gameCode.startsWith('TENENT-') ? gameCode : `TENENT-${gameCode}`;
-  const bareCode   = gameCode.replace(/^TENENT-/, '');
-  for (const c of [tenentCode, bareCode]) {
-    const cs = await getDoc(doc(db, 'gameCodes', c)).catch(() => null);
-    if (cs?.exists()) {
-      batch.update(doc(db, 'gameCodes', c), { activeUsers: 0 });
-      break;
-    }
-  }
-
-  await batch.commit();
 }
 
 /**
@@ -378,6 +354,18 @@ export async function getArchivedSessions(adminUid) {
 }
 
 /**
+ * Fetch all live sessions (status != ended) so the admin can archive them manually.
+ */
+export async function getLiveSessions(gameCode) {
+  const q = query(
+    collection(db, 'sessions'),
+    where('gameCode', '==', gameCode)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/**
  * Get all sessions across all game codes owned by this admin.
  */
 export async function getAllSessions(adminUid) {
@@ -388,17 +376,12 @@ export async function getAllSessions(adminUid) {
     const bareCode = code.code.replace(/^TENENT-/, '');
     const variants = [code.code, bareCode];
     for (const variant of variants) {
-      const q    = query(collection(db, 'sessions'), where('gameCode', '==', variant));
+      const q = query(collection(db, 'sessions'), where('gameCode', '==', variant));
       const snap = await getDocs(q);
       for (const d of snap.docs) {
         if (allSessions.find(s => s.id === d.id)) continue; // dedup
         const playersSnap = await getDocs(collection(db, 'sessions', d.id, 'players'));
-        allSessions.push({
-          id: d.id,
-          playerCount: playersSnap.size,
-          schoolName: code.schoolName,  // always use the game code's school name
-          ...d.data(),
-        });
+        allSessions.push({ id: d.id, playerCount: playersSnap.size, schoolName: code.schoolName, gameName: code.gameName ?? 'Trading Game Jr', ...d.data() });
       }
     }
   }

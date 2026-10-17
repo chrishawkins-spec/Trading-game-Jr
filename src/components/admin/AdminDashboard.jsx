@@ -246,6 +246,7 @@ function SessionArchive({ uid }) {
                 <tr>
                   <th>School</th>
                   <th>Code</th>
+                  <th>Game</th>
                   <th>Config</th>
                   <th>Status</th>
                   <th>Players</th>
@@ -263,6 +264,11 @@ function SessionArchive({ uid }) {
                         <code style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--orange)' }}>
                           {s.gameCode?.replace(/^TENENT-/, '')}
                         </code>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600, background: 'rgba(31,29,76,0.08)', borderRadius: 4, padding: '2px 7px', color: 'var(--navy)', whiteSpace: 'nowrap' }}>
+                          {s.gameName ?? 'Trading Game Jr'}
+                        </span>
                       </td>
                       <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                         {s.gameConfig?.name ?? s.gameConfigId ?? '—'}
@@ -323,6 +329,7 @@ function SessionArchive({ uid }) {
               <thead>
                 <tr>
                   <th>School / Code</th>
+                  <th>Game</th>
                   <th>Config</th>
                   <th>Players</th>
                   <th>Ended</th>
@@ -342,6 +349,11 @@ function SessionArchive({ uid }) {
                         <code style={{ fontSize: '0.75rem', color: 'var(--orange)', fontFamily: 'monospace' }}>
                           {a.gameCode?.replace(/^TENENT-/, '')}
                         </code>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600, background: 'rgba(31,29,76,0.08)', borderRadius: 4, padding: '2px 7px', color: 'var(--navy)', whiteSpace: 'nowrap' }}>
+                          {a.gameName ?? 'Trading Game Jr'}
+                        </span>
                       </td>
                       <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{a.gameConfigName || a.gameConfigId || '—'}</td>
                       <td style={{ fontWeight: 600 }}>{a.playerCount ?? a.players?.length ?? 0}</td>
