@@ -269,6 +269,8 @@ export default function SessionController({ gameCode, gameConfigId, onClose, adm
     await broadcastStatus(sessionId, 'leaderboard');
   };
 
+  const [confirmClose, setConfirmClose] = React.useState(false);
+
   const handleClose = async () => {
     clearTimers();
     if (sessionId) {
@@ -386,9 +388,48 @@ export default function SessionController({ gameCode, gameConfigId, onClose, adm
           {status === 'leaderboard' && (
             <span className="badge badge-yellow" style={{ fontSize:'1rem', padding:'8px 16px' }}>Leaderboard Live</span>
           )}
-          <button className="btn btn-outline btn-sm" onClick={handleClose}>
+          <button className="btn btn-outline btn-sm" onClick={() => setConfirmClose(true)}>
             {status === 'ended' || status === 'leaderboard' ? '✕ End Session' : '✕ Close'}
           </button>
+
+          {/* ── Close confirmation modal ── */}
+          {confirmClose && (
+            <div style={{
+              position: 'fixed', inset: 0, zIndex: 1000,
+              background: 'rgba(0,0,0,0.45)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <div style={{
+                background: 'var(--surface, #fff)',
+                borderRadius: 12,
+                padding: '32px 36px',
+                maxWidth: 380,
+                width: '90%',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+                textAlign: 'center',
+              }}>
+                <div style={{ fontSize: '2rem', marginBottom: 12 }}>⚠️</div>
+                <h3 style={{ marginBottom: 8, color: 'var(--navy, #1F1D4C)' }}>Terminate session?</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 24 }}>
+                  This will end the session for all students and clear the live data. This cannot be undone.
+                </p>
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => setConfirmClose(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => { setConfirmClose(false); handleClose(); }}
+                  >
+                    Yes, terminate
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
