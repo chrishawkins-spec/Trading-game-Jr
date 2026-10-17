@@ -317,13 +317,18 @@ export async function archiveSession(sessionId, gameCode, adminUid) {
     };
   });
 
-  // 3. Build archive record — schoolName and gameName come from the game code doc
+  // 3. Build archive record — look up game code doc (try both TENENT-XXXX and bare XXXX)
   const archiveRef   = doc(collection(db, 'archivedSessions'));
   const tenentCode   = gameCode.startsWith('TENENT-') ? gameCode : `TENENT-${gameCode}`;
-  const codeSnap     = await getDoc(doc(db, 'gameCodes', tenentCode)).catch(() => null);
-  const schoolName   = codeSnap?.data()?.schoolName   ?? sessionData.schoolName ?? gameCode;
-  const gameName     = codeSnap?.data()?.gameName     ?? 'Trading Game Jr';
-  const teacherEmail = codeSnap?.data()?.teacherEmail ?? '';
+  const bareCode2    = gameCode.replace(/^TENENT-/, '');
+  let codeSnap = await getDoc(doc(db, 'gameCodes', tenentCode)).catch(() => null);
+  if (!codeSnap?.exists()) {
+    codeSnap = await getDoc(doc(db, 'gameCodes', bareCode2)).catch(() => null);
+  }
+  const codeData     = codeSnap?.data() ?? {};
+  const schoolName   = codeData.schoolName   ?? sessionData.schoolName ?? gameCode;
+  const gameName     = codeData.gameName     ?? 'Trading Game Jr';
+  const teacherEmail = codeData.teacherEmail ?? '';
 
   const record = {
     id: archiveRef.id,
@@ -350,9 +355,9 @@ export async function archiveSession(sessionId, gameCode, adminUid) {
   batch.set(archiveRef, record);
   for (const docSnap of playersSnap.docs) batch.delete(docSnap.ref);
   if (sessionSnap.exists()) batch.delete(sessionSnap.ref);
-  // Reset activeUsers on the game code
+  // Reset activeUsers on whichever code format was found
   if (codeSnap?.exists()) {
-    batch.update(doc(db, 'gameCodes', tenentCode), { activeUsers: 0 });
+    batch.update(codeSnap.ref, { activeUsers: 0 });
   }
   await batch.commit();
 
@@ -415,18 +420,30 @@ export async function getLiveSessions(gameCode) {
  */
 export async function getAllSessions(adminUid) {
   const codes = await getAllGameCodes(adminUid);
+  const seen  = new Set();        // dedup by Firestore document id
   const allSessions = [];
+
   for (const code of codes) {
-    // Match both "TENENT-XXXX" and bare "XXXX" formats
-    const bareCode = code.code.replace(/^TENENT-/, '');
-    const variants = [code.code, bareCode];
-    for (const variant of variants) {
-      const q = query(collection(db, 'sessions'), where('gameCode', '==', variant));
-      const snap = await getDocs(q);
+    // Sessions may store gameCode as "TENENT-XXXX" or bare "XXXX" — check both
+    const tenentCode = code.code.startsWith('TENENT-') ? code.code : `TENENT-${code.code}`;
+    const bareCode   = code.code.replace(/^TENENT-/, '');
+
+    for (const variant of [tenentCode, bareCode]) {
+      const snap = await getDocs(
+        query(collection(db, 'sessions'), where('gameCode', '==', variant))
+      );
       for (const d of snap.docs) {
-        if (allSessions.find(s => s.id === d.id)) continue; // dedup
+        if (seen.has(d.id)) continue;
+        seen.add(d.id);
         const playersSnap = await getDocs(collection(db, 'sessions', d.id, 'players'));
-        allSessions.push({ id: d.id, playerCount: playersSnap.size, schoolName: code.schoolName, gameName: code.gameName ?? 'Trading Game Jr', ...d.data() });
+        allSessions.push({
+          id: d.id,
+          playerCount: playersSnap.size,
+          schoolName:  code.schoolName,
+          gameName:    code.gameName    ?? 'Trading Game Jr',
+          teacherEmail: code.teacherEmail ?? '',
+          ...d.data(),
+        });
       }
     }
   }
