@@ -37,6 +37,36 @@ service cloud.firestore {
       allow delete: if isSuperadmin();
     }
 
+    // Trolley Pricing Configs — same shape as gameConfigs: superadmin writes,
+    // any signed-in user reads (the master admin's Game Codes/Configs tabs,
+    // and the Shopping Trolley app's own superadmin test screen, both read
+    // this; the import script writes via the Admin SDK, which bypasses
+    // these rules entirely, but a browser-side delete still needs this).
+    match /trolleyConfigs/{configId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSuperadmin();
+      allow delete: if isSuperadmin() && resource.data.createdBy == request.auth.uid;
+    }
+
+    // Trolley Sessions — same shape and reasoning as sessions below, just
+    // for the Shopping Trolley game's own session/player collections.
+    match /trolleySessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isSuperadmin() ||
+        resource.data.adminUid == request.auth.uid
+      );
+
+      match /players/{playerId} {
+        allow read, write: if isSignedIn() && request.auth.uid == playerId;
+        allow read: if isSignedIn() && (
+          isSuperadmin() ||
+          get(/databases/$(database)/documents/trolleySessions/$(sessionId)).data.adminUid == request.auth.uid
+        );
+      }
+    }
+
     // Sessions — any signed-in user can create/update (covers anonymous teachers)
     // Players are always anonymous; teachers are anonymous after our login flow
     match /sessions/{sessionId} {
