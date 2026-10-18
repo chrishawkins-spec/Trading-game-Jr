@@ -71,6 +71,12 @@ export async function deleteGameConfig(id) {
 // list/select/delete them for game-code setup without needing to know how
 // to build one — see /trolleyConfigs schema notes in the Shopping Trolley
 // repo's own firestore.js for the full shape (outlets, items, pricing).
+export async function saveTrolleyConfig(config, uid) {
+  const ref = doc(collection(db, 'trolleyConfigs'));
+  await setDoc(ref, { ...config, id: ref.id, createdBy: uid, updatedAt: serverTimestamp() });
+  return ref.id;
+}
+
 export async function getTrolleyConfigs(uid) {
   const q = query(collection(db, 'trolleyConfigs'), where('createdBy', '==', uid), orderBy('updatedAt', 'desc'));
   const snap = await getDocs(q);

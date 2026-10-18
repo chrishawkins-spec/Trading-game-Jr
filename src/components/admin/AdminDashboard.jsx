@@ -3,6 +3,7 @@ import { useAuth } from '../../hooks/useAuth.jsx';
 import GameConfigBuilder from './GameConfigBuilder.jsx';
 import GameCodeManager from './GameCodeManager.jsx';
 import SessionController from './SessionController.jsx';
+import TrolleyConfigImporter from './TrolleyConfigImporter.jsx';
 import {
   getGameConfigs, getAllGameCodes, deleteGameConfig, getAllTeachers,
   getAllSessions, archiveSession, getArchivedSessions, deleteSession,
@@ -17,6 +18,7 @@ export default function AdminDashboard() {
   const [trolleyConfigs, setTrolleyConfigs] = useState([]);
   const [codes, setCodes] = useState([]);
   const [editingConfig, setEditingConfig] = useState(null); // null | 'new' | config object
+  const [showTrolleyImporter, setShowTrolleyImporter] = useState(false);
   const [activeSession, setActiveSession] = useState(null); // { gameCode, gameConfigId }
   const [loading, setLoading] = useState(true);
 
@@ -162,16 +164,30 @@ export default function AdminDashboard() {
             </div>
 
             {/* ── Shopping Challenge (Trolley) configs ──
-                Read-only here: these come from the Shopping Trolley repo's
-                own pricing-spreadsheet import, not from a builder in this
-                app, so there's no Edit button — fix the spreadsheet and
-                re-import to change one. */}
-            <div style={{ marginBottom: 12 }}>
-              <h2 style={{ marginBottom: 4 }}>Shopping Challenge — Pricing Configs</h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                Imported from a pricing spreadsheet in the Shopping Trolley repo — there's no builder here.
-              </p>
+                These come from the pricing spreadsheet, not a field-by-field
+                builder (too many rows for that) — imported right here, or
+                via the Shopping Trolley repo's command-line script if you
+                prefer that. There's no Edit button either way — fix the
+                spreadsheet and re-import to change one. */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div>
+                <h2 style={{ marginBottom: 4 }}>Shopping Challenge — Pricing Configs</h2>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                  Imported from a pricing spreadsheet — there's no field-by-field builder for ~100+ rows of prices.
+                </p>
+              </div>
+              {!showTrolleyImporter && (
+                <button className="btn btn-primary" onClick={() => setShowTrolleyImporter(true)}>+ Import Pricing</button>
+              )}
             </div>
+
+            {showTrolleyImporter && (
+              <TrolleyConfigImporter
+                onClose={() => setShowTrolleyImporter(false)}
+                onImported={load}
+              />
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
               {!loading && trolleyConfigs.length === 0 && (
                 <div className="card">
