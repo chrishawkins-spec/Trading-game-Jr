@@ -64,6 +64,23 @@ export async function deleteGameConfig(id) {
   await deleteDoc(doc(db, 'gameConfigs', id));
 }
 
+// ─── Trolley (Shopping Challenge) Configs ──────────────────────────────────
+// Read-only from this app's point of view: trolleyConfigs docs are written
+// by the Shopping Trolley repo's own import script (pricing spreadsheet →
+// Firestore), not by GameConfigBuilder here. This lets the master admin
+// list/select/delete them for game-code setup without needing to know how
+// to build one — see /trolleyConfigs schema notes in the Shopping Trolley
+// repo's own firestore.js for the full shape (outlets, items, pricing).
+export async function getTrolleyConfigs(uid) {
+  const q = query(collection(db, 'trolleyConfigs'), where('createdBy', '==', uid), orderBy('updatedAt', 'desc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data());
+}
+
+export async function deleteTrolleyConfig(id) {
+  await deleteDoc(doc(db, 'trolleyConfigs', id));
+}
+
 // ─── Game Codes ───────────────────────────────────────────────────────────
 
 export async function createGameCode(codeData, uid) {

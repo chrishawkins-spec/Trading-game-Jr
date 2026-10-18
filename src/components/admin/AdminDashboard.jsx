@@ -6,7 +6,7 @@ import SessionController from './SessionController.jsx';
 import {
   getGameConfigs, getAllGameCodes, deleteGameConfig, getAllTeachers,
   getAllSessions, archiveSession, getArchivedSessions, deleteSession,
-  updateGameCode,
+  updateGameCode, getTrolleyConfigs, deleteTrolleyConfig,
 } from '../../utils/firestore.js';
 import { formatDate } from '../../utils/gameCode.js';
 
@@ -14,6 +14,7 @@ export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const [tab, setTab] = useState('codes');
   const [configs, setConfigs] = useState([]);
+  const [trolleyConfigs, setTrolleyConfigs] = useState([]);
   const [codes, setCodes] = useState([]);
   const [editingConfig, setEditingConfig] = useState(null); // null | 'new' | config object
   const [activeSession, setActiveSession] = useState(null); // { gameCode, gameConfigId }
@@ -22,9 +23,12 @@ export default function AdminDashboard() {
   const load = async () => {
     setLoading(true);
     try {
-      const [c, gc] = await Promise.all([getGameConfigs(user.uid), getAllGameCodes(user.uid)]);
+      const [c, gc, tc] = await Promise.all([
+        getGameConfigs(user.uid), getAllGameCodes(user.uid), getTrolleyConfigs(user.uid),
+      ]);
       setConfigs(c);
       setCodes(gc);
+      setTrolleyConfigs(tc);
     } finally {
       setLoading(false);
     }
@@ -114,7 +118,7 @@ export default function AdminDashboard() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div>
-                <h2 style={{ marginBottom: 4 }}>Game Configurations</h2>
+                <h2 style={{ marginBottom: 4 }}>Trading Game Jr — Configurations</h2>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                   Design the segments, news stories and price effects for each game.
                 </p>
@@ -122,7 +126,7 @@ export default function AdminDashboard() {
               <button className="btn btn-primary" onClick={() => setEditingConfig('new')}>+ New Config</button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16, marginBottom: 36 }}>
               {loading && <div className="loading-page"><div className="spinner" /></div>}
               {!loading && configs.length === 0 && (
                 <div className="card">
@@ -152,6 +156,44 @@ export default function AdminDashboard() {
                           }
                         }}>Delete</button>
                     </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Shopping Challenge (Trolley) configs ──
+                Read-only here: these come from the Shopping Trolley repo's
+                own pricing-spreadsheet import, not from a builder in this
+                app, so there's no Edit button — fix the spreadsheet and
+                re-import to change one. */}
+            <div style={{ marginBottom: 12 }}>
+              <h2 style={{ marginBottom: 4 }}>Shopping Challenge — Pricing Configs</h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                Imported from a pricing spreadsheet in the Shopping Trolley repo — there's no builder here.
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+              {!loading && trolleyConfigs.length === 0 && (
+                <div className="card">
+                  <div className="card-body" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                    No Shopping Trolley pricing configs imported yet.
+                  </div>
+                </div>
+              )}
+              {trolleyConfigs.map(config => (
+                <div className="card" key={config.id}>
+                  <div className="card-body">
+                    <h3 style={{ fontSize: '1rem', marginBottom: 6 }}>{config.name}</h3>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: 12 }}>
+                      {config.outlets?.length ?? 0} outlets · {config.items?.length ?? 0} items
+                    </div>
+                    <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }}
+                      onClick={async () => {
+                        if (confirm(`Delete "${config.name}"? Any game code pointing at it will stop working.`)) {
+                          await deleteTrolleyConfig(config.id);
+                          load();
+                        }
+                      }}>Delete</button>
                   </div>
                 </div>
               ))}
@@ -584,16 +626,25 @@ function LaunchSession({ onLaunch }) {
     onLaunch({ gameCode: code.code, gameConfigId: code.gameConfigId });
   };
 
-  const activeCodes = codes.filter(c => c.status === 'active');
+  // Only Trading Game Jr codes can be launched from here — this screen
+  // only knows how to run SessionController's trading flow. A code for
+  // another game (e.g. Shopping Challenge) is launched from that game's
+  // own app instead (see the note above).
+  const activeCodes = codes.filter(c => c.status === 'active' && (c.gameName ?? 'Trading Game Jr') === 'Trading Game Jr');
 
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
 
   return (
     <div style={{ maxWidth: 560 }}>
       <h2 style={{ marginBottom: 8 }}>Launch a Live Session</h2>
-      <p style={{ color: 'var(--text-muted)', marginBottom: 24, fontSize: '0.9rem' }}>
+      <p style={{ color: 'var(--text-muted)', marginBottom: 12, fontSize: '0.9rem' }}>
         Select a game code to open the session controller. Students join using the code.
       </p>
+      <div className="alert alert-info" style={{ marginBottom: 20, fontSize: '0.85rem' }}>
+        This launches a <strong>Trading Game Jr</strong> session. Other games run their own live
+        session from their own app — e.g. a Shopping Challenge teacher signs in at the Shopping
+        Trolley app's Teacher login, not here.
+      </div>
       {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>{error}</div>}
       <div className="card">
         <div className="card-body">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { createGameCode, getAllGameCodes, disableGameCode, updateGameCode, getGameConfigs } from '../../utils/firestore.js';
+import { createGameCode, getAllGameCodes, disableGameCode, updateGameCode, getGameConfigs, getTrolleyConfigs } from '../../utils/firestore.js';
 import { generateGameCode, formatDate } from '../../utils/gameCode.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 
@@ -10,10 +10,21 @@ const GAMES = [
   { id: 'uk_economy',         name: 'The UK Economy' },
 ];
 
+// Which Firestore collection a game's configs live in — each game owns its
+// own config shape (Trading's segments/startingCash vs Trolley's
+// outlets/items/pricing), so configs are never shared across games. Games
+// not listed here (Budgeting Jr, The UK Economy) don't have a build-out
+// yet, so they fall back to the trading-shaped gameConfigs collection —
+// update this map when they get their own.
+const CONFIG_SOURCE_BY_GAME = {
+  'Shopping Challenge': 'trolley',
+};
+
 export default function GameCodeManager() {
   const { user } = useAuth();
   const [codes, setCodes] = useState([]);
-  const [configs, setConfigs] = useState([]);
+  const [configs, setConfigs] = useState([]);       // trading-shaped (gameConfigs)
+  const [trolleyConfigs, setTrolleyConfigs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -40,13 +51,21 @@ export default function GameCodeManager() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [c, gc] = await Promise.all([getAllGameCodes(user.uid), getGameConfigs(user.uid)]);
+      const [c, gc, tc] = await Promise.all([
+        getAllGameCodes(user.uid), getGameConfigs(user.uid), getTrolleyConfigs(user.uid),
+      ]);
       setCodes(c);
       setConfigs(gc);
+      setTrolleyConfigs(tc);
     } finally {
       setLoading(false);
     }
   };
+
+  // The config list offered in the dropdown depends on which game is
+  // selected — each game's configs are a different shape and live in a
+  // different collection (see CONFIG_SOURCE_BY_GAME above).
+  const configsForSelectedGame = CONFIG_SOURCE_BY_GAME[form.gameName] === 'trolley' ? trolleyConfigs : configs;
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -120,7 +139,7 @@ export default function GameCodeManager() {
               <div className="form-group" style={{ marginBottom: 16 }}>
                 <label className="form-label">Game *</label>
                 <select className="form-select" required value={form.gameName}
-                  onChange={e => setForm(f => ({ ...f, gameName: e.target.value }))}>
+                  onChange={e => setForm(f => ({ ...f, gameName: e.target.value, gameConfigId: '' }))}>
                   {GAMES.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
                 </select>
               </div>
@@ -150,11 +169,13 @@ export default function GameCodeManager() {
                   <select className="form-select" required value={form.gameConfigId}
                     onChange={e => setForm(f => ({ ...f, gameConfigId: e.target.value }))}>
                     <option value="">— Select a game config —</option>
-                    {configs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {configsForSelectedGame.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
-                  {configs.length === 0 && (
+                  {configsForSelectedGame.length === 0 && (
                     <span className="form-hint" style={{ color: 'var(--red)' }}>
-                      No game configs yet — create one in the Game Configs tab first.
+                      {CONFIG_SOURCE_BY_GAME[form.gameName] === 'trolley'
+                        ? 'No Shopping Trolley pricing configs yet — run the import script in the Shopping Trolley repo first.'
+                        : 'No game configs yet — create one in the Game Configs tab first.'}
                     </span>
                   )}
                 </div>
