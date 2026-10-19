@@ -17,6 +17,7 @@
  *                            finding the cell literally equal to "Method")
  */
 import * as xlsx from 'xlsx';
+import { anonymiseBrand } from './trolleyBrandAnonymisation.js';
 
 function slugify(str) {
   return String(str).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -106,7 +107,9 @@ function parseBrandsAndPricing(wb, items, outlets, warnings) {
     if (r[idx.price] == null) { warnings.push(`Brands & Pricing row ${rowCount + 1}: "${r[idx.brand]}" at ${r[idx.outlet]} has no price — skipped.`); continue; }
 
     const option = {
-      brand: r[idx.brand],
+      // Students never see the real, named brand — see
+      // trolleyBrandAnonymisation.js for why and how the mapping was built.
+      brand: anonymiseBrand(r[idx.brand], { outletName: outlet.name, warnings }),
       tier: r[idx.tier] ?? null,
       packSize: r[idx.packSize] ?? null,
       price: Number(r[idx.price]),
