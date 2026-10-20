@@ -23,6 +23,50 @@ function slugify(str) {
   return String(str).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
+/**
+ * Pulls the first "<number><unit>" (g/kg/ml/l) out of a free-text label —
+ * "500g" -> {amount:500, unit:'g'}; "1kg" -> {amount:1000, unit:'g'}
+ * (normalised to g/ml so two labels in the same dimension compare
+ * directly); "1 x 400g tin" -> {amount:400, unit:'g'} (the bare "1" has
+ * no unit attached, so it's skipped); "1 tbsp (~15ml)" -> {amount:15,
+ * unit:'ml'}. Returns null if nothing matches (e.g. "1 medium", "2
+ * cloves", "each") — those items have no clean numeric quantity to scale
+ * pack-size coverage from, which is fine as long as they don't have more
+ * than one pack size to choose between (see parsePackCovers below).
+ */
+function parseAmount(label) {
+  const match = String(label ?? '').match(/(\d+(?:\.\d+)?)\s?(kg|g|ml|l)\b/i);
+  if (!match) return null;
+  let amount = Number(match[1]);
+  let unit = match[2].toLowerCase();
+  if (unit === 'kg') { amount *= 1000; unit = 'g'; }
+  if (unit === 'l') { amount *= 1000; unit = 'ml'; }
+  return { amount, unit };
+}
+
+/**
+ * How many "2-person base quantities" of an item one pack of a given
+ * pack size provides — see the pack-size model note at the top of
+ * calc.js. Resolution order: an explicit "Pack Covers" column value
+ * always wins; failing that, if both the pack size and the item's base
+ * quantity parse as the same unit (g or ml), it's computed directly;
+ * otherwise it defaults to 1 (exactly one base quantity per pack — the
+ * same behaviour Trolley had before this feature existed, so an item
+ * with only one pack size is never affected either way).
+ */
+function parsePackCovers(packSizeLabel, baseQuantityLabel, explicitCovers) {
+  if (explicitCovers != null && explicitCovers !== '') {
+    const n = Number(explicitCovers);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  const pack = parseAmount(packSizeLabel);
+  const base = parseAmount(baseQuantityLabel);
+  if (pack && base && pack.unit === base.unit && base.amount > 0) {
+    return pack.amount / base.amount;
+  }
+  return 1;
+}
+
 function sheetRows(wb, sheetName) {
   const ws = wb.Sheets[sheetName];
   if (!ws) throw new Error(`Missing sheet: "${sheetName}"`);
@@ -90,6 +134,9 @@ function parseBrandsAndPricing(wb, items, outlets, warnings) {
     tier: header.findIndex(h => typeof h === 'string' && h.startsWith('Tier')),
     packSize: header.indexOf('Pack Size'),
     price: header.findIndex(h => typeof h === 'string' && h.startsWith('In-store Price')),
+    promoQty: header.indexOf('Promo Quantity'),
+    promoPrice: header.findIndex(h => typeof h === 'string' && h.startsWith('Promo Price')),
+    packCovers: header.findIndex(h => typeof h === 'string' && h.startsWith('Pack Covers')),
   };
 
   const itemsById = Object.fromEntries(items.map(it => [it.name.toLowerCase(), it]));
@@ -106,6 +153,12 @@ function parseBrandsAndPricing(wb, items, outlets, warnings) {
     if (!outlet) { warnings.push(`Brands & Pricing row ${rowCount + 1}: unknown outlet "${r[idx.outlet]}" — skipped.`); continue; }
     if (r[idx.price] == null) { warnings.push(`Brands & Pricing row ${rowCount + 1}: "${r[idx.brand]}" at ${r[idx.outlet]} has no price — skipped.`); continue; }
 
+    const promoQty = idx.promoQty >= 0 ? Number(r[idx.promoQty]) : NaN;
+    const promoPrice = idx.promoPrice >= 0 ? r[idx.promoPrice] : null;
+    const promo = (Number.isFinite(promoQty) && promoQty > 1 && promoPrice != null)
+      ? { quantity: promoQty, price: Number(promoPrice) }
+      : null;
+
     const option = {
       // Students never see the real, named brand — see
       // trolleyBrandAnonymisation.js for why and how the mapping was built.
@@ -113,6 +166,8 @@ function parseBrandsAndPricing(wb, items, outlets, warnings) {
       tier: r[idx.tier] ?? null,
       packSize: r[idx.packSize] ?? null,
       price: Number(r[idx.price]),
+      packCovers: parsePackCovers(r[idx.packSize], item.quantityLabel, idx.packCovers >= 0 ? r[idx.packCovers] : null),
+      promo,
     };
 
     if (item.hasType) {
