@@ -102,6 +102,8 @@ function parseItems(wb, warnings) {
     quantity: header.findIndex(h => typeof h === 'string' && h.startsWith('Quantity')),
     hasType: header.indexOf('Has Product Type?'),
     types: header.findIndex(h => typeof h === 'string' && h.startsWith('Product Type Options')),
+    unitSingular: header.findIndex(h => typeof h === 'string' && h.startsWith('Unit (singular)')),
+    unitPlural: header.findIndex(h => typeof h === 'string' && h.startsWith('Unit (plural)')),
   };
   return rows.slice(1).filter(r => r[idx.name]).map(r => {
     const required = String(r[idx.required] ?? '').trim().toUpperCase().startsWith('Y');
@@ -110,6 +112,13 @@ function parseItems(wb, warnings) {
       ? String(r[idx.types]).split(',').map(t => t.trim()).filter(Boolean)
       : [];
     if (!r[idx.quantity]) warnings.push(`Item "${r[idx.name]}" has no quantity label set.`);
+    // "Pack", "packs" is the right word for most items (a pack of mince,
+    // a tin of tomatoes) but wrong for things sold and bought as whole
+    // units — an onion, a bulb of garlic. These two optional columns let
+    // the sheet say what the student is actually clicking to add one of;
+    // left blank, it falls back to "pack"/"packs" as before.
+    const unitSingular = idx.unitSingular >= 0 ? (r[idx.unitSingular] || null) : null;
+    const unitPlural = idx.unitPlural >= 0 ? (r[idx.unitPlural] || null) : null;
     return {
       id: slugify(r[idx.name]),
       name: r[idx.name],
@@ -117,6 +126,8 @@ function parseItems(wb, warnings) {
       quantityLabel: r[idx.quantity] ?? '',
       hasType,
       types,
+      unitSingular,
+      unitPlural,
       brands: hasType ? undefined : {},
       byType: hasType ? {} : undefined,
     };
@@ -137,6 +148,8 @@ function parseBrandsAndPricing(wb, items, outlets, warnings) {
     promoQty: header.indexOf('Promo Quantity'),
     promoPrice: header.findIndex(h => typeof h === 'string' && h.startsWith('Promo Price')),
     packCovers: header.findIndex(h => typeof h === 'string' && h.startsWith('Pack Covers')),
+    unitSingular: header.findIndex(h => typeof h === 'string' && h.startsWith('Unit (singular)')),
+    unitPlural: header.findIndex(h => typeof h === 'string' && h.startsWith('Unit (plural)')),
   };
 
   const itemsById = Object.fromEntries(items.map(it => [it.name.toLowerCase(), it]));
@@ -168,6 +181,13 @@ function parseBrandsAndPricing(wb, items, outlets, warnings) {
       price: Number(r[idx.price]),
       packCovers: parsePackCovers(r[idx.packSize], item.quantityLabel, idx.packCovers >= 0 ? r[idx.packCovers] : null),
       promo,
+      // A per-row override of the item's Unit (singular)/(plural) — for
+      // items where the right noun depends on which product TYPE was
+      // chosen (e.g. "Tomatoes" sold as a "6-pack" of Salad tomatoes vs.
+      // a "truss" of Vine tomatoes need different words). Blank falls
+      // back to the item-level unit, which itself falls back to "pack".
+      unitSingular: idx.unitSingular >= 0 ? (r[idx.unitSingular] || null) : null,
+      unitPlural: idx.unitPlural >= 0 ? (r[idx.unitPlural] || null) : null,
     };
 
     if (item.hasType) {
