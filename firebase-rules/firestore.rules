@@ -55,7 +55,12 @@ service cloud.firestore {
       allow create: if isSignedIn();
       allow update: if isSignedIn() && (
         isSuperadmin() ||
-        resource.data.adminUid == request.auth.uid
+        resource.data.adminUid == request.auth.uid ||
+        // Students joining bump the session's reference-number counter
+        // (joinTrolleySession) — that one field only, same pattern as
+        // the player-counter exception on gameCodes above.
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['nextReferenceNumber'])
       );
 
       match /players/{playerId} {
